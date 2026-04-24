@@ -319,48 +319,65 @@ function findNearestBin() {
 }
 
 async function loadLocations() {
-  const { data, error } = await supabaseClient
-    .from("locations")
-    .select(`
-      id,
-      name,
-      type,
-      operator,
-      address,
-      suburb,
-      state,
-      postcode,
-      location_type,
-      accepts_clothes,
-      accepts_books,
-      accepts_household_goods,
-      notes,
-      verification_status,
-      latitude,
-      longitude
-    `)
-    .not("latitude", "is", null)
-    .not("longitude", "is", null)
-    .limit(10000);
+  const pageSize = 1000;
+  let from = 0;
+  let allData = [];
 
-  if (error) {
-    console.error(error);
-    alert("Could not load locations from Supabase. Check config.js and RLS policy.");
-    return;
+  while (true) {
+    const { data, error } = await supabaseClient
+      .from("locations")
+      .select(`
+        id,
+        name,
+        type,
+        operator,
+        address,
+        suburb,
+        state,
+        postcode,
+        location_type,
+        accepts_clothes,
+        accepts_books,
+        accepts_household_goods,
+        notes,
+        verification_status,
+        latitude,
+        longitude
+      `)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.error(error);
+      alert("Could not load locations from Supabase.");
+      return;
+    }
+
+    allData = allData.concat(data || []);
+
+    if (!data || data.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
   }
 
-  allLocations = (data || []).map((location) => ({
+  allLocations = allData.map((location) => ({
     ...location,
     latitude: Number(location.latitude),
     longitude: Number(location.longitude)
   }));
 
+  console.log("Loaded locations:", allLocations.length);
+  console.log("Valid coords:", allLocations.filter(hasValidCoords).length);
+
   if (!window._hasFitted) {
-  renderLocations({ fit: true });
-  window._hasFitted = true;
-} else {
-  renderLocations();
-}
+    renderLocations({ fit: true });
+    window._hasFitted = true;
+  } else {
+    renderLocations();
+  }
 }
 
 async function loadSubmissions() {
