@@ -7,6 +7,8 @@ body {
   background: #f7faf7;
 }
 
+.hidden { display: none !important; }
+
 .app-header {
   height: 84px;
   padding: 16px 24px;
@@ -29,40 +31,11 @@ body {
 }
 
 #searchInput {
-  width: min(520px, 45vw);
+  width: min(420px, 38vw);
   padding: 12px 14px;
   border: 1px solid #cfd9cf;
   border-radius: 14px;
   font-size: 15px;
-}
-
-.map-prompt {
-  position: fixed;
-  top: 98px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4000;
-  display: none;
-  align-items: center;
-  gap: 12px;
-  background: #17221a;
-  color: white;
-  padding: 12px 16px;
-  border-radius: 999px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
-}
-
-.map-prompt.open { display: flex; }
-
-.map-prompt button {
-  padding: 6px 10px;
-  border-color: white;
-  color: white;
-  background: transparent;
-}
-
-.edit-prompt {
-  background: #7c2d12;
 }
 
 .app-layout {
@@ -108,20 +81,22 @@ button {
 
 button:hover { background: #eef8f0; }
 
+button.danger {
+  border-color: #b42318;
+  color: #b42318;
+}
+
+button.danger:hover {
+  background: #fff0ee;
+}
+
 .primary-button {
   background: #16712e;
   color: white;
 }
 
-.primary-button:hover { background: #105522; }
-
-.danger-button {
-  border-color: #b42318;
-  color: #b42318;
-}
-
-.danger-button:hover {
-  background: #fff1f0;
+.primary-button:hover {
+  background: #105522;
 }
 
 #resetFilters, #nearestBinButton { width: 100%; }
@@ -143,6 +118,7 @@ button:hover { background: #eef8f0; }
 }
 
 .nearest-result.visible { display: block; }
+
 .nearest-result strong { display: block; margin-bottom: 4px; }
 
 .stats {
@@ -153,12 +129,19 @@ button:hover { background: #eef8f0; }
   color: #1c5f2d;
 }
 
-#map { height: 100%; width: 100%; }
-
-.placement-active #map,
-.edit-placement-active #map {
-  cursor: crosshair;
+.admin-panel {
+  background: #fbf7ff;
+  border: 1px solid #eadcff;
+  border-radius: 16px;
+  padding: 16px;
 }
+
+.admin-stats {
+  background: #f1e8ff;
+  color: #5b278f;
+}
+
+#map { height: 100%; width: 100%; }
 
 .marker-dot {
   width: 18px;
@@ -172,11 +155,39 @@ button:hover { background: #eef8f0; }
 .marker-op-shop { background: #2f72d6; }
 .marker-reuse-centre { background: #eba91e; }
 .marker-user { background: #111827; }
-.marker-proposed { background: #f43f5e; }
-.marker-edit { background: #f97316; }
+.marker-submission { background: #8b5cf6; }
+.marker-editing { background: #ef4444; }
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.legend-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
 
 .popup-card h3 { margin: 0 0 6px; font-size: 18px; }
 .popup-card p { margin: 4px 0; }
+
+.popup-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.popup-actions button {
+  padding: 8px 10px;
+  font-size: 13px;
+}
 
 .badges {
   display: flex;
@@ -194,46 +205,9 @@ button:hover { background: #eef8f0; }
 
 .badge.yes { background: #e5f7e9; color: #17692e; }
 .badge.no { background: #f8e9e9; color: #9b2525; }
-
-.verify-row {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.verify-row button {
-  padding: 8px 10px;
-  font-size: 13px;
-  border-radius: 10px;
-}
+.badge.pending { background: #f1e8ff; color: #5b278f; }
 
 .meta { color: #647067; font-size: 13px; }
-
-.verification-pill {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  background: #eef1ef;
-  color: #3c483f;
-}
-
-.verification-pill.manual_verified,
-.verification-pill.qgis_verified {
-  background: #e5f7e9;
-  color: #17692e;
-}
-
-.verification-pill.python_geocoded {
-  background: #fff4d8;
-  color: #8a5b00;
-}
-
-.verification-pill.missing {
-  background: #f4f4f5;
-  color: #52525b;
-}
 
 .modal-backdrop {
   position: fixed;
@@ -284,9 +258,7 @@ form label {
   font-weight: 650;
 }
 
-form input,
-form select,
-form textarea {
+form input, form select, form textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid #cfd9cf;
@@ -351,21 +323,16 @@ fieldset input { width: auto; }
   .app-layout {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
-    height: calc(100vh - 190px);
+    height: calc(100vh - 232px);
   }
 
   .sidebar {
-    max-height: 300px;
+    max-height: 320px;
     border-right: 0;
     border-bottom: 1px solid #dfe8df;
   }
 
-  .form-grid { grid-template-columns: 1fr; }
-
-  .map-prompt {
-    width: calc(100% - 24px);
-    top: 145px;
-    border-radius: 16px;
-    justify-content: space-between;
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DonateMap</title>
+  <title>DonateMap SA</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -14,44 +14,44 @@
 <body>
   <header class="app-header">
     <div>
-      <h1>DonateMap</h1>
+      <h1>DonateMap SA</h1>
       <p>Find places to donate, reuse and give</p>
     </div>
 
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
-      <button id="openSubmitModal" class="primary-button">Suggest a new place</button>
+      <button id="openSubmitModal" class="primary-button">Suggest a place</button>
+      <button id="adminLoginButton">Admin</button>
+      <button id="adminLogoutButton" class="hidden">Logout</button>
     </div>
   </header>
-
-  <div id="mapPrompt" class="map-prompt">
-    Click the map to place the suggested location marker.
-    <button id="cancelPlacement">Cancel</button>
-  </div>
-
-  <div id="editPrompt" class="map-prompt edit-prompt">
-    Drag the marker to the correct location, then submit the update.
-    <button id="cancelEditPlacement">Cancel</button>
-  </div>
 
   <main class="app-layout">
     <aside class="sidebar">
       <section>
-        <h2>Items accepted</h2>
-        <label><input type="checkbox" id="filterClothes" /> Clothes</label>
-        <label><input type="checkbox" id="filterBooks" /> Books</label>
-        <label><input type="checkbox" id="filterHousehold" /> Household goods</label>
+        <h2>Legend</h2>
+        <div class="legend-item"><span class="legend-dot marker-bin"></span> Donation bin</div>
+        <div class="legend-item"><span class="legend-dot marker-op-shop"></span> Op shop</div>
+        <div class="legend-item"><span class="legend-dot marker-reuse-centre"></span> Reuse centre</div>
+        <div class="legend-item admin-only hidden"><span class="legend-dot marker-submission"></span> Pending submission</div>
       </section>
 
       <section>
-        <h2>Location type</h2>
+        <h2>Show places</h2>
         <label><input type="checkbox" class="typeFilter" value="bin" checked /> Donation bins</label>
         <label><input type="checkbox" class="typeFilter" value="op_shop" checked /> Op shops</label>
         <label><input type="checkbox" class="typeFilter" value="reuse_centre" checked /> Reuse centres</label>
       </section>
 
       <section>
-        <h2>Location setting</h2>
+        <h2>Accepted items</h2>
+        <label><input type="checkbox" id="filterClothes" /> Clothes</label>
+        <label><input type="checkbox" id="filterBooks" /> Books</label>
+        <label><input type="checkbox" id="filterHousehold" /> Household goods</label>
+      </section>
+
+      <section>
+        <h2>Setting</h2>
         <label><input type="checkbox" class="locationTypeFilter" value="shopping_centre" checked /> Shopping centre</label>
         <label><input type="checkbox" class="locationTypeFilter" value="standalone" checked /> Standalone</label>
         <label><input type="checkbox" class="locationTypeFilter" value="carpark" checked /> Carpark</label>
@@ -60,18 +60,19 @@
       </section>
 
       <section>
-        <h2>Verification status</h2>
-        <label><input type="checkbox" class="verificationFilter" value="manual_verified" checked /> Manually verified</label>
-        <label><input type="checkbox" class="verificationFilter" value="qgis_verified" checked /> QGIS verified</label>
-        <label><input type="checkbox" class="verificationFilter" value="python_geocoded" checked /> Geocoded</label>
-        <label><input type="checkbox" class="verificationFilter" value="missing" checked /> Unverified</label>
-      </section>
-
-      <section>
         <h2>Nearest donation bin</h2>
         <p class="hint">Uses your browser location and current filters.</p>
         <button id="nearestBinButton">Find nearest bin</button>
         <div id="nearestResult" class="nearest-result"></div>
+      </section>
+
+      <section id="adminPanel" class="hidden admin-panel">
+        <h2>Admin review</h2>
+        <p class="hint">Pending submissions are shown as purple points. Click one to drag, approve or reject.</p>
+        <label><input type="checkbox" id="showSubmissionsToggle" checked /> Show pending submissions</label>
+        <div class="stats admin-stats">
+          <strong id="submissionCount">0</strong> pending submissions
+        </div>
       </section>
 
       <button id="resetFilters">Reset filters</button>
@@ -88,15 +89,21 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="submitTitle">
       <div class="modal-header">
         <div>
-          <h2 id="submitTitle">Suggest a new place</h2>
-          <p id="submitSubtitle">Drop a marker first, then add details. Submissions are reviewed before appearing on the map.</p>
+          <h2 id="submitTitle">Suggest a place</h2>
+          <p>Submissions are reviewed before appearing on the map.</p>
         </div>
         <button id="closeSubmitModal" class="icon-button" aria-label="Close">×</button>
       </div>
 
       <form id="submitForm">
-        <input name="submission_type" type="hidden" value="new" />
-        <input name="location_id" type="hidden" />
+        <label>
+          Submission type
+          <select name="submission_type" required>
+            <option value="new">New location</option>
+            <option value="update">Update existing location</option>
+            <option value="report_missing">Report missing / removed</option>
+          </select>
+        </label>
 
         <label>
           Name
@@ -137,8 +144,8 @@
         <label>
           Location setting
           <select name="location_type">
+            <option value="standalone">Standalone</option>
             <option value="shopping_centre">Shopping centre</option>
-            <option value="standalone" selected>Standalone</option>
             <option value="carpark">Carpark</option>
             <option value="church">Church / community</option>
             <option value="other">Other</option>
@@ -169,7 +176,7 @@
           </label>
         </div>
 
-        <p class="hint">Coordinates are filled from the marker. You can adjust them if needed.</p>
+        <p class="hint">Coordinates are optional. Leave blank if you only know the address.</p>
 
         <div class="form-grid">
           <label>
