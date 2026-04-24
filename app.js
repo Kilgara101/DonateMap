@@ -3,6 +3,8 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let allLocations = [];
 let userMarker = null;
 let nearestMarker = null;
+let proposedMarker = null;
+let placementMode = false;
 
 const map = L.map("map").setView([-34.9285, 138.6007], 11);
 
@@ -25,10 +27,21 @@ const elements = {
   filterHousehold: document.getElementById("filterHousehold"),
   typeFilters: [...document.querySelectorAll(".typeFilter")],
   locationTypeFilters: [...document.querySelectorAll(".locationTypeFilter")],
+  verificationFilters: [...document.querySelectorAll(".verificationFilter")],
   resetFilters: document.getElementById("resetFilters"),
   nearestBinButton: document.getElementById("nearestBinButton"),
   nearestResult: document.getElementById("nearestResult"),
-  resultCount: document.getElementById("resultCount")
+  resultCount: document.getElementById("resultCount"),
+
+  openSubmitModal: document.getElementById("openSubmitModal"),
+  closeSubmitModal: document.getElementById("closeSubmitModal"),
+  cancelSubmit: document.getElementById("cancelSubmit"),
+  submitModal: document.getElementById("submitModal"),
+  submitForm: document.getElementById("submitForm"),
+  submitMessage: document.getElementById("submitMessage"),
+  useMapCentreButton: document.getElementById("useMapCentreButton"),
+  mapPrompt: document.getElementById("mapPrompt"),
+  cancelPlacement: document.getElementById("cancelPlacement")
 };
 
 function makeIcon(type, isNearest = false) {
@@ -61,12 +74,31 @@ function makeUserIcon() {
   });
 }
 
+function makeProposedIcon() {
+  return L.divIcon({
+    html: `<div class="marker-dot marker-proposed" style="width:26px;height:26px"></div>`,
+    className: "",
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -10]
+  });
+}
+
 function prettyType(type) {
   return {
     bin: "Donation bin",
     op_shop: "Op shop",
     reuse_centre: "Reuse centre"
   }[type] || type || "Unknown";
+}
+
+function prettyVerification(status) {
+  return {
+    manual_verified: "Manually verified",
+    qgis_verified: "QGIS verified",
+    python_geocoded: "Geocoded",
+    missing: "Unverified"
+  }[status] || "Unknown";
 }
 
 function escapeHtml(value) {
@@ -83,6 +115,8 @@ function boolBadge(label, value) {
 }
 
 function popupHtml(location) {
+  const verification = location.verification_status || "missing";
+
   return `
     <div class="popup-card">
       <h3>${escapeHtml(location.name || "Unnamed location")}</h3>
@@ -94,7 +128,10 @@ function popupHtml(location) {
         ${boolBadge("Household", location.accepts_household_goods)}
       </div>
       ${location.notes ? `<p class="meta">${escapeHtml(location.notes)}</p>` : ""}
-      <p class="meta">Verification: ${escapeHtml(location.verification_status || "unknown")}</p>
+      <span class="verification-pill ${escapeHtml(verification)}">${prettyVerification(verification)}</span>
+      <div class="verify-row">
+        <button class="verify-button" onclick="verifyLocation('${location.id}')">Verify this place</button>
+      </div>
     </div>
   `;
 }
@@ -129,6 +166,9 @@ function locationPassesFilters(location) {
 
   const selectedLocationTypes = getSelectedValues(elements.locationTypeFilters);
   if (!selectedLocationTypes.includes(location.location_type || "other")) return false;
+
+  const selectedVerificationStatuses = getSelectedValues(elements.verificationFilters);
+  if (!selectedVerificationStatuses.includes(location.verification_status || "missing")) return false;
 
   const searchTerm = elements.searchInput.value.trim().toLowerCase();
   if (searchTerm) {
@@ -216,12 +256,7 @@ function findNearestBin() {
       const nearest = candidateBins
         .map((location) => ({
           ...location,
-          distance_km: distanceKm(
-            userLat,
-            userLon,
-            Number(location.latitude),
-            Number(location.longitude)
-          )
+          distance_km: distanceKm(userLat, userLon, Number(location.latitude), Number(location.longitude))
         }))
         .sort((a, b) => a.distance_km - b.distance_km)[0];
 
@@ -257,11 +292,7 @@ function findNearestBin() {
       console.error(error);
       setNearestMessage("Could not access your location. Check browser permissions.");
     },
-    {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 60000
-    }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
   );
 }
 
@@ -299,7 +330,8 @@ async function loadLocations() {
   allLocations = (data || []).map((location) => ({
     ...location,
     latitude: Number(location.latitude),
-    longitude: Number(location.longitude)
+    longitude: Number(location.longitude),
+    verification_status: location.verification_status || "missing"
   }));
 
   renderLocations({ fit: true });
@@ -312,6 +344,7 @@ function resetFilters() {
   elements.filterHousehold.checked = false;
   elements.typeFilters.forEach((checkbox) => (checkbox.checked = true));
   elements.locationTypeFilters.forEach((checkbox) => (checkbox.checked = true));
+  elements.verificationFilters.forEach((checkbox) => (checkbox.checked = true));
   elements.nearestResult.classList.remove("visible");
   elements.nearestResult.innerHTML = "";
 
@@ -328,13 +361,175 @@ function resetFilters() {
   renderLocations({ fit: true });
 }
 
+function startPlacementMode() {
+  placementMode = true;
+  document.body.classList.add("placement-active");
+  elements.mapPrompt.classList.add("open");
+  elements.mapPrompt.setAttribute("aria-hidden", "false");
+}
+
+function cancelPlacementMode() {
+  placementMode = false;
+  document.body.classList.remove("placement-active");
+  elements.mapPrompt.classList.remove("open");
+  elements.mapPrompt.setAttribute("aria-hidden", "true");
+}
+
+function placeProposedMarker(latlng) {
+  if (proposedMarker) map.removeLayer(proposedMarker);
+
+  proposedMarker = L.marker(latlng, {
+    icon: makeProposedIcon(),
+    draggable: true
+  }).addTo(map);
+
+  proposedMarker.bindPopup("Proposed location").openPopup();
+
+  fillLatLonFields(latlng.lat, latlng.lng);
+}
+
+function fillLatLonFields(lat, lng) {
+  elements.submitForm.elements.latitude.value = Number(lat).toFixed(6);
+  elements.submitForm.elements.longitude.value = Number(lng).toFixed(6);
+}
+
+function openSubmitModal() {
+  elements.submitModal.classList.add("open");
+  elements.submitModal.setAttribute("aria-hidden", "false");
+  setSubmitMessage("", "");
+}
+
+function closeSubmitModal() {
+  elements.submitModal.classList.remove("open");
+  elements.submitModal.setAttribute("aria-hidden", "true");
+}
+
+function setSubmitMessage(message, type) {
+  elements.submitMessage.textContent = message;
+  elements.submitMessage.className = "submit-message";
+
+  if (message) {
+    elements.submitMessage.classList.add("visible", type);
+  }
+}
+
+function valueOrNull(value) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function numberOrNull(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+async function handleSubmit(event) {
+  event.preventDefault();
+
+  const formData = new FormData(elements.submitForm);
+
+  const latitude = numberOrNull(formData.get("latitude"));
+  const longitude = numberOrNull(formData.get("longitude"));
+
+  if ((latitude !== null && (latitude < -90 || latitude > 90)) || (longitude !== null && (longitude < -180 || longitude > 180))) {
+    setSubmitMessage("Latitude or longitude looks invalid.", "error");
+    return;
+  }
+
+  const payload = {
+    submission_type: valueOrNull(formData.get("submission_type")),
+    name: valueOrNull(formData.get("name")),
+    type: valueOrNull(formData.get("type")),
+    operator: valueOrNull(formData.get("operator")),
+    address: valueOrNull(formData.get("address")),
+    suburb: valueOrNull(formData.get("suburb")),
+    state: "SA",
+    postcode: valueOrNull(formData.get("postcode")),
+    location_type: valueOrNull(formData.get("location_type")) || "standalone",
+    accepts_clothes: formData.has("accepts_clothes"),
+    accepts_books: formData.has("accepts_books"),
+    accepts_household_goods: formData.has("accepts_household_goods"),
+    notes: valueOrNull(formData.get("notes")),
+    submitted_by_name: valueOrNull(formData.get("submitted_by_name")),
+    submitted_by_email: valueOrNull(formData.get("submitted_by_email")),
+    latitude,
+    longitude,
+    status: "pending"
+  };
+
+  setSubmitMessage("Submitting...", "success");
+
+  const { error } = await supabaseClient
+    .from("submissions")
+    .insert(payload);
+
+  if (error) {
+    console.error(error);
+    setSubmitMessage("Submission failed. Check Supabase RLS policy for public submissions.", "error");
+    return;
+  }
+
+  elements.submitForm.reset();
+  if (proposedMarker) {
+    map.removeLayer(proposedMarker);
+    proposedMarker = null;
+  }
+  setSubmitMessage("Thanks! Your suggestion has been submitted for review.", "success");
+}
+
+function useMapCentreForSubmission() {
+  const centre = map.getCenter();
+  fillLatLonFields(centre.lat, centre.lng);
+  placeProposedMarker(centre);
+}
+
+async function verifyLocation(locationId) {
+  const location = allLocations.find((item) => item.id === locationId);
+  if (!location) return;
+
+  const { error } = await supabaseClient
+    .from("submissions")
+    .insert({
+      submission_type: "update",
+      location_id: location.id,
+      name: location.name,
+      type: location.type,
+      operator: location.operator,
+      address: location.address,
+      suburb: location.suburb,
+      state: location.state || "SA",
+      postcode: location.postcode,
+      location_type: location.location_type,
+      accepts_clothes: location.accepts_clothes,
+      accepts_books: location.accepts_books,
+      accepts_household_goods: location.accepts_household_goods,
+      notes: "Community verification: still here",
+      latitude: location.latitude,
+      longitude: location.longitude,
+      status: "pending"
+    });
+
+  if (error) {
+    console.error(error);
+    alert("Could not submit verification. Check Supabase RLS policy.");
+    return;
+  }
+
+  alert("Thanks — verification submitted for review.");
+}
+
+window.verifyLocation = verifyLocation;
+
 [
   elements.searchInput,
   elements.filterClothes,
   elements.filterBooks,
   elements.filterHousehold,
   ...elements.typeFilters,
-  ...elements.locationTypeFilters
+  ...elements.locationTypeFilters,
+  ...elements.verificationFilters
 ].forEach((element) => {
   element.addEventListener("input", () => renderLocations());
   element.addEventListener("change", () => renderLocations());
@@ -342,5 +537,24 @@ function resetFilters() {
 
 elements.resetFilters.addEventListener("click", resetFilters);
 elements.nearestBinButton.addEventListener("click", findNearestBin);
+
+elements.openSubmitModal.addEventListener("click", startPlacementMode);
+elements.cancelPlacement.addEventListener("click", cancelPlacementMode);
+
+map.on("click", (event) => {
+  if (!placementMode) return;
+
+  placeProposedMarker(event.latlng);
+  cancelPlacementMode();
+  openSubmitModal();
+});
+
+elements.closeSubmitModal.addEventListener("click", closeSubmitModal);
+elements.cancelSubmit.addEventListener("click", closeSubmitModal);
+elements.submitModal.addEventListener("click", (event) => {
+  if (event.target === elements.submitModal) closeSubmitModal();
+});
+elements.submitForm.addEventListener("submit", handleSubmit);
+elements.useMapCentreButton.addEventListener("click", useMapCentreForSubmission);
 
 loadLocations();

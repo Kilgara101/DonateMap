@@ -18,8 +18,16 @@
       <p>Find places to donate, reuse and give</p>
     </div>
 
-    <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
+    <div class="header-actions">
+      <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
+      <button id="openSubmitModal" class="primary-button">Suggest a place</button>
+    </div>
   </header>
+
+  <div id="mapPrompt" class="map-prompt">
+    Click the map to place the suggested location marker.
+    <button id="cancelPlacement">Cancel</button>
+  </div>
 
   <main class="app-layout">
     <aside class="sidebar">
@@ -38,12 +46,20 @@
       </section>
 
       <section>
-        <h2>Setting</h2>
+        <h2>Location setting</h2>
         <label><input type="checkbox" class="locationTypeFilter" value="shopping_centre" checked /> Shopping centre</label>
         <label><input type="checkbox" class="locationTypeFilter" value="standalone" checked /> Standalone</label>
         <label><input type="checkbox" class="locationTypeFilter" value="carpark" checked /> Carpark</label>
         <label><input type="checkbox" class="locationTypeFilter" value="church" checked /> Church / community</label>
         <label><input type="checkbox" class="locationTypeFilter" value="other" checked /> Other</label>
+      </section>
+
+      <section>
+        <h2>Verification status</h2>
+        <label><input type="checkbox" class="verificationFilter" value="manual_verified" checked /> Manually verified</label>
+        <label><input type="checkbox" class="verificationFilter" value="qgis_verified" checked /> QGIS verified</label>
+        <label><input type="checkbox" class="verificationFilter" value="python_geocoded" checked /> Geocoded</label>
+        <label><input type="checkbox" class="verificationFilter" value="missing" checked /> Unverified</label>
       </section>
 
       <section>
@@ -62,6 +78,123 @@
 
     <div id="map"></div>
   </main>
+
+  <div id="submitModal" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="submitTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="submitTitle">Suggest a place</h2>
+          <p>Drop a marker first, then add details. Submissions are reviewed before appearing on the map.</p>
+        </div>
+        <button id="closeSubmitModal" class="icon-button" aria-label="Close">×</button>
+      </div>
+
+      <form id="submitForm">
+        <label>
+          Submission type
+          <select name="submission_type" required>
+            <option value="new">New location</option>
+            <option value="update">Update existing location</option>
+            <option value="report_missing">Report missing / removed</option>
+          </select>
+        </label>
+
+        <label>
+          Name
+          <input name="name" type="text" placeholder="e.g. Vinnies Donation Bin - Marion" required />
+        </label>
+
+        <label>
+          Type
+          <select name="type" required>
+            <option value="bin">Donation bin</option>
+            <option value="op_shop">Op shop</option>
+            <option value="reuse_centre">Reuse centre</option>
+          </select>
+        </label>
+
+        <label>
+          Operator / charity
+          <input name="operator" type="text" placeholder="e.g. Vinnies, Salvos, SCR Group" />
+        </label>
+
+        <label>
+          Address or location description
+          <input name="address" type="text" placeholder="Street address, shopping centre, carpark details..." required />
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Suburb
+            <input name="suburb" type="text" />
+          </label>
+
+          <label>
+            Postcode
+            <input name="postcode" type="text" />
+          </label>
+        </div>
+
+        <label>
+          Location setting
+          <select name="location_type">
+            <option value="shopping_centre">Shopping centre</option>
+            <option value="standalone" selected>Standalone</option>
+            <option value="carpark">Carpark</option>
+            <option value="church">Church / community</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+
+        <fieldset>
+          <legend>Accepted items</legend>
+          <label><input name="accepts_clothes" type="checkbox" /> Clothes</label>
+          <label><input name="accepts_books" type="checkbox" /> Books</label>
+          <label><input name="accepts_household_goods" type="checkbox" /> Household goods</label>
+        </fieldset>
+
+        <label>
+          Notes
+          <textarea name="notes" rows="3" placeholder="e.g. bin is near Woolworths entrance, no books, only bagged clothes..."></textarea>
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Your name
+            <input name="submitted_by_name" type="text" />
+          </label>
+
+          <label>
+            Email
+            <input name="submitted_by_email" type="email" />
+          </label>
+        </div>
+
+        <p class="hint">Coordinates are filled from the marker you placed. You can adjust them if needed.</p>
+
+        <div class="form-grid">
+          <label>
+            Latitude
+            <input name="latitude" type="number" step="any" placeholder="-34.9285" />
+          </label>
+
+          <label>
+            Longitude
+            <input name="longitude" type="number" step="any" placeholder="138.6007" />
+          </label>
+        </div>
+
+        <button type="button" id="useMapCentreButton">Use current map centre</button>
+
+        <div id="submitMessage" class="submit-message"></div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelSubmit">Cancel</button>
+          <button type="submit" class="primary-button">Submit suggestion</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
