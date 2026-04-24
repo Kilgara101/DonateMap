@@ -9,7 +9,7 @@ let editingMarker = null;
 let editingContext = null;
 let dropPinMapHandler = null;
 
-const map = L.map("map").setView([-34.9285, 138.6007], 11);
+const map = L.map("map").setView([-25.0, 133.0], 4);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -341,7 +341,7 @@ async function loadLocations() {
     `)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
-    .limit(5000);
+    .limit(10000);
 
   if (error) {
     console.error(error);
@@ -355,7 +355,12 @@ async function loadLocations() {
     longitude: Number(location.longitude)
   }));
 
+  if (!window._hasFitted) {
   renderLocations({ fit: true });
+  window._hasFitted = true;
+} else {
+  renderLocations();
+}
 }
 
 async function loadSubmissions() {
@@ -467,7 +472,7 @@ function startMoveMode({ title, text, context, lat = null, lon = null, buttonTex
 
 function startDropPinMode() {
   startMoveMode({
-    title: "Suggest a new location!",
+    title: "Drop a pin",
     text: "Click the map where the new place is. You can drag the red marker after dropping it, then continue to the form.",
     context: { type: "public_new" },
     buttonText: "Continue to form"
