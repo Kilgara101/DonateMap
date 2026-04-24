@@ -39,6 +39,7 @@ body {
 }
 
 .app-layout {
+  position: relative;
   display: grid;
   grid-template-columns: 320px 1fr;
   height: calc(100vh - 84px);
@@ -139,6 +140,35 @@ button.danger:hover {
 }
 
 #map { height: 100%; width: 100%; }
+
+.move-panel {
+  position: absolute;
+  left: 344px;
+  top: 20px;
+  width: min(360px, calc(100vw - 380px));
+  z-index: 1600;
+  background: white;
+  border: 1px solid #f0c4c4;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+}
+
+.move-panel p {
+  margin: 6px 0 12px;
+  color: #647067;
+  font-size: 14px;
+}
+
+.move-panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.move-panel-actions button {
+  flex: 1;
+  padding: 10px;
+}
 
 .marker-dot {
   width: 18px;
@@ -327,6 +357,12 @@ fieldset input { width: auto; }
     max-height: 320px;
     border-right: 0;
     border-bottom: 1px solid #dfe8df;
+  }
+
+  .move-panel {
+    left: 12px;
+    top: 12px;
+    width: calc(100vw - 24px);
   }
 
   .form-grid { grid-template-columns: 1fr; }

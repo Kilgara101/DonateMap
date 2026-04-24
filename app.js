@@ -41,6 +41,12 @@ const elements = {
   showSubmissionsToggle: document.getElementById("showSubmissionsToggle"),
   submissionCount: document.getElementById("submissionCount"),
 
+  movePanel: document.getElementById("movePanel"),
+  movePanelTitle: document.getElementById("movePanelTitle"),
+  movePanelText: document.getElementById("movePanelText"),
+  finishMoveButton: document.getElementById("finishMoveButton"),
+  cancelMoveButton: document.getElementById("cancelMoveButton"),
+
   openSubmitModal: document.getElementById("openSubmitModal"),
   closeSubmitModal: document.getElementById("closeSubmitModal"),
   cancelSubmit: document.getElementById("cancelSubmit"),
@@ -134,7 +140,7 @@ function popupHtml(location) {
       ${location.notes ? `<p class="meta">${escapeHtml(location.notes)}</p>` : ""}
       <div class="popup-actions">
         <button onclick="window.startPublicModifyLocation('${location.id}')">Suggest an update</button>
-        <button class="danger" onclick="window.startPublicRemoveLocation('${location.id}')">Report removed</button>
+        <button class="danger" onclick="window.startPublicRemoveLocation('${location.id}')">Report not there anymore</button>
         ${adminMoveButton}
       </div>
     </div>
@@ -460,59 +466,82 @@ function clearEditingMarker() {
     editingMarker = null;
   }
   editingContext = null;
+  elements.movePanel.classList.add("hidden");
 }
 
-function openEditMarker(lat, lon, html) {
+function startMoveMode({ title, text, context, lat, lon }) {
   clearEditingMarker();
 
+  editingContext = context;
   editingMarker = L.marker([lat, lon], {
     draggable: true,
     icon: makeIcon("bin", { isEditing: true })
   }).addTo(map);
 
-  editingMarker.bindPopup(html).openPopup();
+  elements.movePanelTitle.textContent = title;
+  elements.movePanelText.textContent = text;
+  elements.movePanel.classList.remove("hidden");
+
   map.setView([lat, lon], Math.max(map.getZoom(), 15));
+}
+
+async function finishMove() {
+  if (!editingMarker || !editingContext) return;
+
+  const latlng = editingMarker.getLatLng();
+
+  if (editingContext.type === "public_update") {
+    openSubmissionForm({
+      mode: "update",
+      title: "Suggest an update",
+      subtitle: "Update any details that need changing. Your moved point has been saved into this suggestion.",
+      location: editingContext.location,
+      latitude: latlng.lat,
+      longitude: latlng.lng
+    });
+
+    clearEditingMarker();
+    return;
+  }
+
+  if (editingContext.type === "admin_location") {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update({
+        latitude: latlng.lat,
+        longitude: latlng.lng,
+        verification_status: "manual_verified"
+      })
+      .eq("id", editingContext.id);
+
+    if (error) {
+      console.error(error);
+      alert("Could not update location. Check authenticated RLS policies.");
+      return;
+    }
+
+    clearEditingMarker();
+    await loadLocations();
+    alert("Location updated.");
+    return;
+  }
+
+  if (editingContext.type === "submission") {
+    await approveSubmissionFromMove(latlng);
+  }
 }
 
 window.startPublicModifyLocation = function(id) {
   const location = allLocations.find((item) => item.id === id);
   if (!location) return;
 
-  editingContext = { type: "public_update", location };
-
-  openEditMarker(
-    Number(location.latitude),
-    Number(location.longitude),
-    `
-      <div class="popup-card">
-        <h3>Suggest updated location</h3>
-        <p>${escapeHtml(location.name)}</p>
-        <p class="meta">Drag the red marker to the correct location first, then continue to update details.</p>
-        <div class="popup-actions">
-          <button onclick="window.continuePublicModifyLocation()">Continue to form</button>
-          <button onclick="window.cancelEditingMarker()">Cancel</button>
-        </div>
-      </div>
-    `
-  );
-};
-
-window.continuePublicModifyLocation = function() {
-  if (!editingMarker || !editingContext || editingContext.type !== "public_update") return;
-
-  const location = editingContext.location;
-  const latlng = editingMarker.getLatLng();
-
-  openSubmissionForm({
-    mode: "update",
-    title: "Suggest an update",
-    subtitle: "Move the marker first, then update any details that need changing. Your suggestion will be reviewed.",
-    location,
-    latitude: latlng.lat,
-    longitude: latlng.lng
+  startMoveMode({
+    title: "Move the point first",
+    text: "Drag the red marker to the correct location, then click Save moved point to update the form.",
+    context: { type: "public_update", location },
+    lat: Number(location.latitude),
+    lon: Number(location.longitude)
   });
-
-  clearEditingMarker();
 };
 
 window.startPublicRemoveLocation = function(id) {
@@ -521,8 +550,8 @@ window.startPublicRemoveLocation = function(id) {
 
   openSubmissionForm({
     mode: "report_missing",
-    title: "Report removed location",
-    subtitle: "Tell us why this place should be removed. Your report will be reviewed.",
+    title: "Report location missing",
+    subtitle: "Tell us why this place is no longer there. Your report will be reviewed.",
     location,
     latitude: Number(location.latitude),
     longitude: Number(location.longitude)
@@ -530,51 +559,20 @@ window.startPublicRemoveLocation = function(id) {
 };
 
 window.startMoveLocation = function(id) {
+  window.startAdminMoveLocation(id);
+};
+
+window.startAdminMoveLocation = function(id) {
   const location = allLocations.find((item) => item.id === id);
   if (!location) return;
 
-  editingContext = { type: "location", id };
-
-  openEditMarker(
-    Number(location.latitude),
-    Number(location.longitude),
-    `
-      <div class="popup-card">
-        <h3>Admin: move location</h3>
-        <p>${escapeHtml(location.name)}</p>
-        <p class="meta">Drag the red marker, then save.</p>
-        <div class="popup-actions">
-          <button onclick="window.saveMovedLocation()">Save moved location</button>
-          <button onclick="window.cancelEditingMarker()">Cancel</button>
-        </div>
-      </div>
-    `
-  );
-};
-
-window.saveMovedLocation = async function() {
-  if (!editingMarker || !editingContext || editingContext.type !== "location") return;
-
-  const latlng = editingMarker.getLatLng();
-
-  const { error } = await supabaseClient
-    .from("locations")
-    .update({
-      latitude: latlng.lat,
-      longitude: latlng.lng,
-      verification_status: "manual_verified"
-    })
-    .eq("id", editingContext.id);
-
-  if (error) {
-    console.error(error);
-    alert("Could not update location. Check authenticated RLS policies.");
-    return;
-  }
-
-  clearEditingMarker();
-  await loadLocations();
-  alert("Location updated.");
+  startMoveMode({
+    title: "Admin: move location",
+    text: "Drag the red marker to the correct location, then save.",
+    context: { type: "admin_location", id },
+    lat: Number(location.latitude),
+    lon: Number(location.longitude)
+  });
 };
 
 window.startReviewSubmission = function(id) {
@@ -590,19 +588,614 @@ window.startReviewSubmission = function(id) {
     lon = centre.lng;
   }
 
-  editingContext = { type: "submission", id };
-
-  openEditMarker(
+  startMoveMode({
+    title: "Review submission",
+    text: "Drag the red marker to the correct location, then approve.",
+    context: { type: "submission", id },
     lat,
-    lon,
+    lon
+  });
+};
+
+async function approveSubmissionFromMove(latlng) {
+  const submission = allSubmissions.find((item) => item.id === editingContext.id);
+  if (!submission) return;
+
+  const locationPayload = {
+    name: submission.name || "Unnamed location",
+    type: submission.type || "bin",
+    operator: submission.operator || null,
+    address: submission.address || null,
+    suburb: submission.suburb || null,
+    state: submission.state || "SA",
+    postcode: submission.postcode || null,
+    location_type: submission.location_type || "standalone",
+    accepts_clothes: !!submission.accepts_clothes,
+    accepts_books: !!submission.accepts_books,
+    accepts_household_goods: !!submission.accepts_household_goods,
+    notes: submission.notes || null,
+    source: "Community submission",
+    verification_status: "manual_verified",
+    latitude: latlng.lat,
+    longitude: latlng.lng
+  };
+
+  let locationError = null;
+
+  if (submission.submission_type === "update" && submission.location_id) {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update(locationPayload)
+      .eq("id", submission.location_id);
+
+    locationError = error;
+  } else if (submission.submission_type === "report_missing" && submission.location_id) {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update({
+        verification_status: "missing",
+        notes: submission.notes || "Reported removed by community submission."
+      })
+      .eq("id", submission.location_id);
+
+    locationError = error;
+  } else {
+    const { error } = await supabaseClient
+      .from("locations")
+      .insert(locationPayload);
+
+    locationError = error;
+  }
+
+  if (locationError) {
+    console.error(locationError);
+    alert("Could not approve submission into locations. Check authenticated RLS policies.");
+    return;
+  }
+
+  const { error: submissionError } = await supabaseClient
+    .from("submissions")
+    .update({
+      status: "approved",
+      reviewed_at: new Date().toISOString(),
+      reviewer_notes: "Approved via map review"
+    })
+    .eq("id", submission.id);
+
+  if (submissionError) {
+    console.error(submissionError);
+    alert("Location was approved, but submission status could not be updated.");
+    return;
+  }
+
+  clearEditingMarker();
+  await loadLocations();
+  await loadSubmissions();
+  alert("Submission approved.");
+}
+
+window.approveSubmission()">Approve to map</button>
+          <button class="danger" onclick="window.rejectSubmission('${submission.id}')">Reject</button>
+          <button onclick="window.cancelEditingMarker()">Cancel</button>
+        </div>
+      </div>
     `
-      <div class="popup-card">
-        <h3>Review submission</h3>
-        <p>${escapeHtml(submission.name || "Unnamed submission")}</p>
-        <p>${escapeHtml(submission.address || "")}</p>
-        <p class="meta">Drag the red marker to the correct location before approving.</p>
-        <div class="popup-actions">
-          <button onclick="window.approveSubmission()">Approve to map</button>
+  );
+};
+
+window.rejectSubmission('${submission.id}')">Reject</button>
+      </div>
+    </div>
+  `;
+}
+
+function getSelectedValues(checkboxes) {
+  return checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+}
+
+function hasValidCoords(location) {
+  const lat = Number(location.latitude);
+  const lon = Number(location.longitude);
+
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
+}
+
+function locationPassesFilters(location) {
+  if (!hasValidCoords(location)) return false;
+
+  if (elements.filterClothes.checked && !location.accepts_clothes) return false;
+  if (elements.filterBooks.checked && !location.accepts_books) return false;
+  if (elements.filterHousehold.checked && !location.accepts_household_goods) return false;
+
+  const selectedTypes = getSelectedValues(elements.typeFilters);
+  if (!selectedTypes.includes(location.type)) return false;
+
+  const selectedLocationTypes = getSelectedValues(elements.locationTypeFilters);
+  if (!selectedLocationTypes.includes(location.location_type || "other")) return false;
+
+  const searchTerm = elements.searchInput.value.trim().toLowerCase();
+  if (searchTerm) {
+    const haystack = [
+      location.name,
+      location.operator,
+      location.address,
+      location.suburb,
+      location.postcode
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (!haystack.includes(searchTerm)) return false;
+  }
+
+  return true;
+}
+
+function getFilteredLocations() {
+  return allLocations.filter(locationPassesFilters);
+}
+
+function renderLocations({ fit = false } = {}) {
+  markerClusterLayer.clearLayers();
+
+  const filtered = getFilteredLocations();
+
+  filtered.forEach((location) => {
+    L.marker([Number(location.latitude), Number(location.longitude)], {
+      icon: makeIcon(location.type)
+    })
+      .bindPopup(popupHtml(location))
+      .addTo(markerClusterLayer);
+  });
+
+  elements.resultCount.textContent = filtered.length;
+
+  if (fit && filtered.length > 0) {
+    const bounds = L.latLngBounds(filtered.map((loc) => [Number(loc.latitude), Number(loc.longitude)]));
+    map.fitBounds(bounds.pad(0.15), { maxZoom: 13 });
+  }
+}
+
+function renderSubmissions() {
+  submissionLayer.clearLayers();
+
+  if (!isAdmin || !elements.showSubmissionsToggle.checked) {
+    elements.submissionCount.textContent = allSubmissions.length;
+    return;
+  }
+
+  allSubmissions.forEach((submission) => {
+    if (!hasValidCoords(submission)) return;
+
+    L.marker([Number(submission.latitude), Number(submission.longitude)], {
+      icon: makeIcon(submission.type, { isSubmission: true })
+    })
+      .bindPopup(submissionPopupHtml(submission))
+      .addTo(submissionLayer);
+  });
+
+  elements.submissionCount.textContent = allSubmissions.length;
+}
+
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const radiusKm = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+
+  return radiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRad(degrees) {
+  return degrees * Math.PI / 180;
+}
+
+function setNearestMessage(html) {
+  elements.nearestResult.innerHTML = html;
+  elements.nearestResult.classList.add("visible");
+}
+
+function findNearestBin() {
+  if (!navigator.geolocation) {
+    setNearestMessage("Your browser does not support location services.");
+    return;
+  }
+
+  setNearestMessage("Finding your location...");
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const userLat = position.coords.latitude;
+      const userLon = position.coords.longitude;
+
+      const candidateBins = getFilteredLocations().filter((location) => location.type === "bin");
+
+      if (candidateBins.length === 0) {
+        setNearestMessage("No donation bins match your current filters.");
+        return;
+      }
+
+      const nearest = candidateBins
+        .map((location) => ({
+          ...location,
+          distance_km: distanceKm(userLat, userLon, Number(location.latitude), Number(location.longitude))
+        }))
+        .sort((a, b) => a.distance_km - b.distance_km)[0];
+
+      if (userMarker) map.removeLayer(userMarker);
+      if (nearestMarker) map.removeLayer(nearestMarker);
+
+      userMarker = L.marker([userLat, userLon], { icon: makeUserIcon() })
+        .bindPopup("You are here")
+        .addTo(map);
+
+      nearestMarker = L.marker([Number(nearest.latitude), Number(nearest.longitude)], {
+        icon: makeIcon(nearest.type, { isNearest: true })
+      })
+        .bindPopup(popupHtml(nearest))
+        .addTo(map);
+
+      const bounds = L.latLngBounds([
+        [userLat, userLon],
+        [Number(nearest.latitude), Number(nearest.longitude)]
+      ]);
+
+      map.fitBounds(bounds.pad(0.4), { maxZoom: 15 });
+
+      setNearestMessage(`
+        <strong>${escapeHtml(nearest.name)}</strong>
+        ${escapeHtml(nearest.address || "")}<br>
+        ${nearest.distance_km.toFixed(1)} km away
+      `);
+
+      nearestMarker.openPopup();
+    },
+    (error) => {
+      console.error(error);
+      if (error.code === 1) setNearestMessage("Location blocked. Enable location permissions in your browser.");
+      else setNearestMessage("Could not access your location. Try again.");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+async function loadLocations() {
+  const { data, error } = await supabaseClient
+    .from("locations")
+    .select(`
+      id,
+      name,
+      type,
+      operator,
+      address,
+      suburb,
+      state,
+      postcode,
+      location_type,
+      accepts_clothes,
+      accepts_books,
+      accepts_household_goods,
+      notes,
+      verification_status,
+      latitude,
+      longitude
+    `)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .limit(5000);
+
+  if (error) {
+    console.error(error);
+    alert("Could not load locations from Supabase. Check config.js and RLS policy.");
+    return;
+  }
+
+  allLocations = (data || []).map((location) => ({
+    ...location,
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude)
+  }));
+
+  renderLocations({ fit: true });
+}
+
+async function loadSubmissions() {
+  if (!isAdmin) {
+    allSubmissions = [];
+    renderSubmissions();
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("submissions")
+    .select(`
+      id,
+      submission_type,
+      location_id,
+      name,
+      type,
+      operator,
+      address,
+      suburb,
+      state,
+      postcode,
+      location_type,
+      accepts_clothes,
+      accepts_books,
+      accepts_household_goods,
+      notes,
+      latitude,
+      longitude,
+      status,
+      submitted_at
+    `)
+    .eq("status", "pending")
+    .limit(1000);
+
+  if (error) {
+    console.error(error);
+    alert("Could not load submissions. Check authenticated RLS policies.");
+    return;
+  }
+
+  allSubmissions = (data || []).map((submission) => ({
+    ...submission,
+    latitude: Number(submission.latitude),
+    longitude: Number(submission.longitude)
+  }));
+
+  renderSubmissions();
+}
+
+function resetFilters() {
+  elements.searchInput.value = "";
+  elements.filterClothes.checked = false;
+  elements.filterBooks.checked = false;
+  elements.filterHousehold.checked = false;
+  elements.typeFilters.forEach((checkbox) => (checkbox.checked = true));
+  elements.locationTypeFilters.forEach((checkbox) => (checkbox.checked = true));
+  elements.nearestResult.classList.remove("visible");
+  elements.nearestResult.innerHTML = "";
+
+  if (userMarker) {
+    map.removeLayer(userMarker);
+    userMarker = null;
+  }
+
+  if (nearestMarker) {
+    map.removeLayer(nearestMarker);
+    nearestMarker = null;
+  }
+
+  clearEditingMarker();
+  renderLocations({ fit: true });
+  renderSubmissions();
+}
+
+function clearEditingMarker() {
+  if (editingMarker) {
+    map.removeLayer(editingMarker);
+    editingMarker = null;
+  }
+  editingContext = null;
+  elements.movePanel.classList.add("hidden");
+}
+
+function startMoveMode({ title, text, context, lat, lon }) {
+  clearEditingMarker();
+
+  editingContext = context;
+  editingMarker = L.marker([lat, lon], {
+    draggable: true,
+    icon: makeIcon("bin", { isEditing: true })
+  }).addTo(map);
+
+  elements.movePanelTitle.textContent = title;
+  elements.movePanelText.textContent = text;
+  elements.movePanel.classList.remove("hidden");
+
+  map.setView([lat, lon], Math.max(map.getZoom(), 15));
+}
+
+async function finishMove() {
+  if (!editingMarker || !editingContext) return;
+
+  const latlng = editingMarker.getLatLng();
+
+  if (editingContext.type === "public_update") {
+    openSubmissionForm({
+      mode: "update",
+      title: "Suggest an update",
+      subtitle: "Update any details that need changing. Your moved point has been saved into this suggestion.",
+      location: editingContext.location,
+      latitude: latlng.lat,
+      longitude: latlng.lng
+    });
+
+    clearEditingMarker();
+    return;
+  }
+
+  if (editingContext.type === "admin_location") {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update({
+        latitude: latlng.lat,
+        longitude: latlng.lng,
+        verification_status: "manual_verified"
+      })
+      .eq("id", editingContext.id);
+
+    if (error) {
+      console.error(error);
+      alert("Could not update location. Check authenticated RLS policies.");
+      return;
+    }
+
+    clearEditingMarker();
+    await loadLocations();
+    alert("Location updated.");
+    return;
+  }
+
+  if (editingContext.type === "submission") {
+    await approveSubmissionFromMove(latlng);
+  }
+}
+
+window.startPublicModifyLocation = function(id) {
+  const location = allLocations.find((item) => item.id === id);
+  if (!location) return;
+
+  startMoveMode({
+    title: "Move the point first",
+    text: "Drag the red marker to the correct location, then click Save moved point to update the form.",
+    context: { type: "public_update", location },
+    lat: Number(location.latitude),
+    lon: Number(location.longitude)
+  });
+};
+
+window.startPublicRemoveLocation = function(id) {
+  const location = allLocations.find((item) => item.id === id);
+  if (!location) return;
+
+  openSubmissionForm({
+    mode: "report_missing",
+    title: "Report location missing",
+    subtitle: "Tell us why this place is no longer there. Your report will be reviewed.",
+    location,
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude)
+  });
+};
+
+window.startMoveLocation = function(id) {
+  window.startAdminMoveLocation(id);
+};
+
+window.startAdminMoveLocation = function(id) {
+  const location = allLocations.find((item) => item.id === id);
+  if (!location) return;
+
+  startMoveMode({
+    title: "Admin: move location",
+    text: "Drag the red marker to the correct location, then save.",
+    context: { type: "admin_location", id },
+    lat: Number(location.latitude),
+    lon: Number(location.longitude)
+  });
+};
+
+window.startReviewSubmission = function(id) {
+  const submission = allSubmissions.find((item) => item.id === id);
+  if (!submission) return;
+
+  let lat = Number(submission.latitude);
+  let lon = Number(submission.longitude);
+
+  if (!hasValidCoords(submission)) {
+    const centre = map.getCenter();
+    lat = centre.lat;
+    lon = centre.lng;
+  }
+
+  startMoveMode({
+    title: "Review submission",
+    text: "Drag the red marker to the correct location, then approve.",
+    context: { type: "submission", id },
+    lat,
+    lon
+  });
+};
+
+async function approveSubmissionFromMove(latlng) {
+  const submission = allSubmissions.find((item) => item.id === editingContext.id);
+  if (!submission) return;
+
+  const locationPayload = {
+    name: submission.name || "Unnamed location",
+    type: submission.type || "bin",
+    operator: submission.operator || null,
+    address: submission.address || null,
+    suburb: submission.suburb || null,
+    state: submission.state || "SA",
+    postcode: submission.postcode || null,
+    location_type: submission.location_type || "standalone",
+    accepts_clothes: !!submission.accepts_clothes,
+    accepts_books: !!submission.accepts_books,
+    accepts_household_goods: !!submission.accepts_household_goods,
+    notes: submission.notes || null,
+    source: "Community submission",
+    verification_status: "manual_verified",
+    latitude: latlng.lat,
+    longitude: latlng.lng
+  };
+
+  let locationError = null;
+
+  if (submission.submission_type === "update" && submission.location_id) {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update(locationPayload)
+      .eq("id", submission.location_id);
+
+    locationError = error;
+  } else if (submission.submission_type === "report_missing" && submission.location_id) {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update({
+        verification_status: "missing",
+        notes: submission.notes || "Reported removed by community submission."
+      })
+      .eq("id", submission.location_id);
+
+    locationError = error;
+  } else {
+    const { error } = await supabaseClient
+      .from("locations")
+      .insert(locationPayload);
+
+    locationError = error;
+  }
+
+  if (locationError) {
+    console.error(locationError);
+    alert("Could not approve submission into locations. Check authenticated RLS policies.");
+    return;
+  }
+
+  const { error: submissionError } = await supabaseClient
+    .from("submissions")
+    .update({
+      status: "approved",
+      reviewed_at: new Date().toISOString(),
+      reviewer_notes: "Approved via map review"
+    })
+    .eq("id", submission.id);
+
+  if (submissionError) {
+    console.error(submissionError);
+    alert("Location was approved, but submission status could not be updated.");
+    return;
+  }
+
+  clearEditingMarker();
+  await loadLocations();
+  await loadSubmissions();
+  alert("Submission approved.");
+}
+
+window.approveSubmission()">Approve to map</button>
           <button class="danger" onclick="window.rejectSubmission('${submission.id}')">Reject</button>
           <button onclick="window.cancelEditingMarker()">Cancel</button>
         </div>
@@ -790,7 +1383,7 @@ function openSubmissionForm({ mode, title, subtitle, location, latitude, longitu
     elements.submitForm.elements.accepts_books.checked = !!location.accepts_books;
     elements.submitForm.elements.accepts_household_goods.checked = !!location.accepts_household_goods;
     elements.submitForm.elements.notes.value = mode === "report_missing"
-      ? `Reported removed: ${location.notes || ""}`.trim()
+      ? `This location appears to no longer be there. ${location.notes || ""}`.trim()
       : location.notes || "";
   }
 
@@ -915,6 +1508,9 @@ elements.nearestBinButton.addEventListener("click", findNearestBin);
 elements.adminLoginButton.addEventListener("click", adminLogin);
 elements.adminLogoutButton.addEventListener("click", adminLogout);
 elements.showSubmissionsToggle.addEventListener("change", renderSubmissions);
+
+elements.finishMoveButton.addEventListener("click", finishMove);
+elements.cancelMoveButton.addEventListener("click", clearEditingMarker);
 
 elements.openSubmitModal.addEventListener("click", openSubmitModal);
 elements.closeSubmitModal.addEventListener("click", closeSubmitModal);
