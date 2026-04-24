@@ -739,14 +739,19 @@ function openSubmissionForm({ mode, title, subtitle, location, latitude, longitu
       : location.notes || "";
   }
 
-  if (latitude != null && longitude != null) {
-    elements.submitForm.elements.latitude.value = Number(latitude).toFixed(6);
-    elements.submitForm.elements.longitude.value = Number(longitude).toFixed(6);
-  } else {
-    const centre = map.getCenter();
-    elements.submitForm.elements.latitude.value = centre.lat.toFixed(6);
-    elements.submitForm.elements.longitude.value = centre.lng.toFixed(6);
-  }
+if (latitude != null && longitude != null) {
+  elements.submitForm.elements.latitude.value = Number(latitude).toFixed(6);
+  elements.submitForm.elements.longitude.value = Number(longitude).toFixed(6);
+} else if (mode === "new") {
+  // NEW: don't force coordinates for new submissions
+  elements.submitForm.elements.latitude.value = "";
+  elements.submitForm.elements.longitude.value = "";
+} else {
+  // keep old behaviour for updates + removals
+  const centre = map.getCenter();
+  elements.submitForm.elements.latitude.value = centre.lat.toFixed(6);
+  elements.submitForm.elements.longitude.value = centre.lng.toFixed(6);
+}
 
   elements.coordinateHint.textContent = mode === "update"
     ? "Coordinates were set from the marker you moved."
