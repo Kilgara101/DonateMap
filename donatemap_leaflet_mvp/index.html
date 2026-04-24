@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DonateMap SA</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="app-header">
+    <div>
+      <h1>DonateMap SA</h1>
+      <p>Find places to donate, reuse and give</p>
+    </div>
+
+    <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
+  </header>
+
+  <main class="app-layout">
+    <aside class="sidebar">
+      <section>
+        <h2>Items accepted</h2>
+        <label><input type="checkbox" id="filterClothes" /> Clothes</label>
+        <label><input type="checkbox" id="filterBooks" /> Books</label>
+        <label><input type="checkbox" id="filterHousehold" /> Household goods</label>
+      </section>
+
+      <section>
+        <h2>Location type</h2>
+        <label><input type="checkbox" class="typeFilter" value="bin" checked /> Donation bins</label>
+        <label><input type="checkbox" class="typeFilter" value="op_shop" checked /> Op shops</label>
+        <label><input type="checkbox" class="typeFilter" value="reuse_centre" checked /> Reuse centres</label>
+      </section>
+
+      <section>
+        <h2>Setting</h2>
+        <label><input type="checkbox" class="locationTypeFilter" value="shopping_centre" checked /> Shopping centre</label>
+        <label><input type="checkbox" class="locationTypeFilter" value="standalone" checked /> Standalone</label>
+        <label><input type="checkbox" class="locationTypeFilter" value="carpark" checked /> Carpark</label>
+        <label><input type="checkbox" class="locationTypeFilter" value="church" checked /> Church / community</label>
+        <label><input type="checkbox" class="locationTypeFilter" value="other" checked /> Other</label>
+      </section>
+
+      <section>
+        <h2>Nearest donation bin</h2>
+        <p class="hint">Uses your browser location and current filters.</p>
+        <button id="nearestBinButton">Find nearest bin</button>
+        <div id="nearestResult" class="nearest-result"></div>
+      </section>
+
+      <button id="resetFilters">Reset filters</button>
+
+      <div class="stats">
+        <strong id="resultCount">0</strong> places shown
+      </div>
+    </aside>
+
+    <div id="map"></div>
+  </main>
+
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
