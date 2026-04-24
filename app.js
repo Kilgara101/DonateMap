@@ -467,7 +467,7 @@ function startMoveMode({ title, text, context, lat = null, lon = null, buttonTex
 
 function startDropPinMode() {
   startMoveMode({
-    title: "Drop a pin",
+    title: "Suggest a new location!",
     text: "Click the map where the new place is. You can drag the red marker after dropping it, then continue to the form.",
     context: { type: "public_new" },
     buttonText: "Continue to form"
