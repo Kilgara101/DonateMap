@@ -7,6 +7,7 @@ let userMarker = null;
 let nearestMarker = null;
 let editingMarker = null;
 let editingContext = null;
+let dropPinMapHandler = null;
 
 const map = L.map("map").setView([-34.9285, 138.6007], 11);
 
@@ -435,30 +436,84 @@ function clearEditingMarker() {
     map.removeLayer(editingMarker);
     editingMarker = null;
   }
+
+  if (dropPinMapHandler) {
+    map.off("click", dropPinMapHandler);
+    dropPinMapHandler = null;
+  }
+
   editingContext = null;
   elements.movePanel.classList.add("hidden");
 }
 
-function startMoveMode({ title, text, context, lat, lon }) {
+function startMoveMode({ title, text, context, lat = null, lon = null, buttonText = "Save moved point" }) {
   clearEditingMarker();
 
   editingContext = context;
-  editingMarker = L.marker([lat, lon], {
-    draggable: true,
-    icon: makeIcon("bin", { isEditing: true })
-  }).addTo(map);
-
   elements.movePanelTitle.textContent = title;
   elements.movePanelText.textContent = text;
+  elements.finishMoveButton.textContent = buttonText;
   elements.movePanel.classList.remove("hidden");
 
-  map.setView([lat, lon], Math.max(map.getZoom(), 15));
+  if (lat != null && lon != null) {
+    editingMarker = L.marker([lat, lon], {
+      draggable: true,
+      icon: makeIcon("bin", { isEditing: true })
+    }).addTo(map);
+
+    map.setView([lat, lon], Math.max(map.getZoom(), 15));
+  }
+}
+
+function startDropPinMode() {
+  startMoveMode({
+    title: "Drop a pin",
+    text: "Click the map where the new place is. You can drag the red marker after dropping it, then continue to the form.",
+    context: { type: "public_new" },
+    buttonText: "Continue to form"
+  });
+
+  dropPinMapHandler = (event) => {
+    const latlng = event.latlng;
+
+    if (!editingMarker) {
+      editingMarker = L.marker([latlng.lat, latlng.lng], {
+        draggable: true,
+        icon: makeIcon("bin", { isEditing: true })
+      }).addTo(map);
+    } else {
+      editingMarker.setLatLng(latlng);
+    }
+
+    elements.movePanelText.textContent = "Pin dropped. Drag it if needed, then continue to the form.";
+  };
+
+  map.on("click", dropPinMapHandler);
 }
 
 async function finishMove() {
   if (!editingMarker || !editingContext) return;
 
   const latlng = editingMarker.getLatLng();
+
+  if (editingContext.type === "public_new") {
+    if (!editingMarker) {
+      alert("Click the map to drop a pin first.");
+      return;
+    }
+
+    openSubmissionForm({
+      mode: "new",
+      title: "Suggest a new place",
+      subtitle: "Add the details for the pin you dropped. Your suggestion will be reviewed.",
+      location: null,
+      latitude: latlng.lat,
+      longitude: latlng.lng
+    });
+
+    clearEditingMarker();
+    return;
+  }
 
   if (editingContext.type === "public_update") {
     openSubmissionForm({
@@ -706,14 +761,7 @@ async function refreshAdminState() {
 }
 
 function openSubmitModal() {
-  openSubmissionForm({
-    mode: "new",
-    title: "Suggest a new place",
-    subtitle: "Add a new donation location. Your suggestion will be reviewed.",
-    location: null,
-    latitude: null,
-    longitude: null
-  });
+  startDropPinMode();
 }
 
 function openSubmissionForm({ mode, title, subtitle, location, latitude, longitude }) {
@@ -739,25 +787,21 @@ function openSubmissionForm({ mode, title, subtitle, location, latitude, longitu
       : location.notes || "";
   }
 
-if (latitude != null && longitude != null) {
-  elements.submitForm.elements.latitude.value = Number(latitude).toFixed(6);
-  elements.submitForm.elements.longitude.value = Number(longitude).toFixed(6);
-} else if (mode === "new") {
-  // NEW: don't force coordinates for new submissions
-  elements.submitForm.elements.latitude.value = "";
-  elements.submitForm.elements.longitude.value = "";
-} else {
-  // keep old behaviour for updates + removals
-  const centre = map.getCenter();
-  elements.submitForm.elements.latitude.value = centre.lat.toFixed(6);
-  elements.submitForm.elements.longitude.value = centre.lng.toFixed(6);
-}
+  if (latitude != null && longitude != null) {
+    elements.submitForm.elements.latitude.value = Number(latitude).toFixed(6);
+    elements.submitForm.elements.longitude.value = Number(longitude).toFixed(6);
+  } else {
+    elements.submitForm.elements.latitude.value = "";
+    elements.submitForm.elements.longitude.value = "";
+  }
 
   elements.coordinateHint.textContent = mode === "update"
     ? "Coordinates were set from the marker you moved."
     : mode === "report_missing"
       ? "This report keeps the original location coordinates for review."
-      : "Coordinates are optional. Use the map centre button if helpful.";
+      : mode === "new"
+        ? "Coordinates were set from the pin you dropped."
+        : "Coordinates are optional. Use the map centre button if helpful.";
 
   elements.submitModal.classList.add("open");
   elements.submitModal.setAttribute("aria-hidden", "false");

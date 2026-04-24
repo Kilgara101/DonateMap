@@ -20,7 +20,7 @@
 
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
-      <button id="openSubmitModal" class="primary-button">Suggest a new place</button>
+      <button id="openSubmitModal" class="primary-button">Drop a pin</button>
       <button id="adminLoginButton">Admin</button>
       <button id="adminLogoutButton" class="hidden">Logout</button>
     </div>
@@ -181,19 +181,10 @@
 
         <p class="hint" id="coordinateHint">Coordinates are optional. Leave blank if you only know the address.</p>
 
-        <div class="form-grid">
-          <label>
-            Latitude
-            <input name="latitude" type="number" step="any" placeholder="-34.9285" />
-          </label>
+        <input name="latitude" type="hidden" />
+        <input name="longitude" type="hidden" />
 
-          <label>
-            Longitude
-            <input name="longitude" type="number" step="any" placeholder="138.6007" />
-          </label>
-        </div>
-
-        <button type="button" id="useMapCentreButton">Use current map centre</button>
+        <button type="button" id="useMapCentreButton">Use map centre as pin</button>
 
         <div id="submitMessage" class="submit-message"></div>
 
