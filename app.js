@@ -42,8 +42,10 @@ const elements = {
   mobileListTab: document.getElementById("mobileListTab"),
   mobileMapTab: document.getElementById("mobileMapTab"),
   mobileFiltersTab: document.getElementById("mobileFiltersTab"),
-  adminLoginButton: document.getElementById("adminLoginButton"),
-  adminLogoutButton: document.getElementById("adminLogoutButton"),
+  stateFilter: document.getElementById("stateFilter"),
+  locationFilterInput: document.getElementById("locationFilterInput"),
+  adminLoginButton: document.getElementById("footerAdminLoginButton"),
+  adminLogoutButton: document.getElementById("footerAdminLogoutButton"),
   adminPanel: document.getElementById("adminPanel"),
   showSubmissionsToggle: document.getElementById("showSubmissionsToggle"),
   submissionCount: document.getElementById("submissionCount"),
@@ -193,12 +195,31 @@ function locationPassesFilters(location) {
   const selectedLocationTypes = getSelectedValues(elements.locationTypeFilters);
   if (!selectedLocationTypes.includes(location.location_type || "other")) return false;
 
+  const selectedState = elements.stateFilter?.value || "";
+  if (selectedState && String(location.state || "").toUpperCase() !== selectedState) return false;
+
+  const locationTerm = elements.locationFilterInput?.value.trim().toLowerCase() || "";
+  if (locationTerm) {
+    const locationHaystack = [
+      location.suburb,
+      location.postcode,
+      location.state,
+      location.address
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (!locationHaystack.includes(locationTerm)) return false;
+  }
+
   const searchTerm = elements.searchInput.value.trim().toLowerCase();
   if (searchTerm) {
-    const haystack = [location.name, location.operator, location.address, location.suburb, location.postcode]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+    const haystack = [
+      location.name,
+      location.operator,
+      location.address,
+      location.suburb,
+      location.postcode,
+      location.state
+    ].filter(Boolean).join(" ").toLowerCase();
 
     if (!haystack.includes(searchTerm)) return false;
   }
@@ -238,28 +259,36 @@ function renderLocations({ fit = false } = {}) {
 function renderResultsList(locations = getFilteredLocations()) {
   if (!elements.resultsList) return;
 
-  const visibleLocations = locations.slice(0, 100);
+  const sortedLocations = [...locations].sort((a, b) => {
+    const aKey = [a.state, a.suburb, a.name].filter(Boolean).join(" ").toLowerCase();
+    const bKey = [b.state, b.suburb, b.name].filter(Boolean).join(" ").toLowerCase();
+    return aKey.localeCompare(bKey);
+  });
 
+  const visibleLocations = sortedLocations.slice(0, 100);
   elements.listCount.textContent = locations.length;
 
   if (!locations.length) {
     elements.resultsList.innerHTML = `
       <div class="result-item">
         <strong>No matching places</strong>
-        <span>Try changing your filters or search.</span>
+        <span>Try changing your location filter, search or place filters.</span>
       </div>
     `;
     return;
   }
 
   elements.resultsList.innerHTML = visibleLocations.map((loc) => {
-    const address = [loc.address, loc.suburb, loc.state].filter(Boolean).join(", ");
+    const locality = [loc.suburb, loc.state, loc.postcode].filter(Boolean).join(" ");
+    const address = [loc.address, locality].filter(Boolean).join(", ");
+
     return `
       <button class="result-item" type="button" onclick="window.zoomToLocation('${loc.id}')">
         <strong>${escapeHtml(loc.name || "Unnamed location")}</strong>
         <span>${escapeHtml(address)}</span>
         <div class="result-item-meta">
           <span class="result-chip">${escapeHtml(prettyType(loc.type))}</span>
+          <span class="result-chip">${escapeHtml(loc.state || "Unknown state")}</span>
           <span class="result-chip">${escapeHtml(prettyVerification(loc.verification_status))}</span>
         </div>
       </button>
@@ -270,7 +299,7 @@ function renderResultsList(locations = getFilteredLocations()) {
     elements.resultsList.innerHTML += `
       <div class="result-item">
         <strong>${locations.length - visibleLocations.length} more results</strong>
-        <span>Use search or filters to narrow the list.</span>
+        <span>Use state, suburb, postcode or filters to narrow the list.</span>
       </div>
     `;
   }
@@ -397,43 +426,81 @@ function findNearestBin() {
 }
 
 async function loadLocations() {
-  const { data, error } = await supabaseClient
-    .from("locations")
-    .select(`
-      id,
-      name,
-      type,
-      operator,
-      address,
-      suburb,
-      state,
-      postcode,
-      location_type,
-      accepts_clothes,
-      accepts_books,
-      accepts_household_goods,
-      notes,
-      verification_status,
-      latitude,
-      longitude
-    `)
-    .not("latitude", "is", null)
-    .not("longitude", "is", null)
-    .limit(5000);
+  const pageSize = 1000;
+  let from = 0;
+  let allData = [];
 
-  if (error) {
-    console.error(error);
-    alert("Could not load locations from Supabase. Check config.js and RLS policy.");
-    return;
+  while (true) {
+    const { data, error } = await supabaseClient
+      .from("locations")
+      .select(`
+        id,
+        name,
+        type,
+        operator,
+        address,
+        suburb,
+        state,
+        postcode,
+        location_type,
+        accepts_clothes,
+        accepts_books,
+        accepts_household_goods,
+        notes,
+        verification_status,
+        latitude,
+        longitude
+      `)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      console.error(error);
+      alert("Could not load locations from Supabase. Check config.js and RLS policy.");
+      return;
+    }
+
+    allData = allData.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
   }
 
-  allLocations = (data || []).map((location) => ({
+  allLocations = allData.map((location) => ({
     ...location,
     latitude: Number(location.latitude),
     longitude: Number(location.longitude)
   }));
 
-  renderLocations({ fit: true });
+  populateStateFilter();
+
+  console.log("Loaded locations:", allLocations.length);
+  console.log("Valid coords:", allLocations.filter(hasValidCoords).length);
+
+  if (!window._hasFitted) {
+    renderLocations({ fit: true });
+    window._hasFitted = true;
+  } else {
+    renderLocations();
+  }
+}
+
+function populateStateFilter() {
+  if (!elements.stateFilter) return;
+
+  const currentValue = elements.stateFilter.value;
+  const states = [...new Set(
+    allLocations
+      .map((loc) => String(loc.state || "").trim().toUpperCase())
+      .filter(Boolean)
+  )].sort();
+
+  elements.stateFilter.innerHTML = '<option value="">All states</option>' +
+    states.map((state) => `<option value="${escapeHtml(state)}">${escapeHtml(state)}</option>`).join("");
+
+  if (states.includes(currentValue)) {
+    elements.stateFilter.value = currentValue;
+  }
 }
 
 async function loadSubmissions() {
@@ -491,6 +558,8 @@ function resetFilters() {
   elements.filterHousehold.checked = false;
   elements.typeFilters.forEach((checkbox) => (checkbox.checked = true));
   elements.locationTypeFilters.forEach((checkbox) => (checkbox.checked = true));
+  if (elements.stateFilter) elements.stateFilter.value = "";
+  if (elements.locationFilterInput) elements.locationFilterInput.value = "";
   elements.nearestResult.classList.remove("visible");
   elements.nearestResult.innerHTML = "";
 
@@ -1028,6 +1097,19 @@ elements.searchInput.addEventListener("keydown", (event) => {
 elements.mobileListTab?.addEventListener("click", () => setMobileView("list"));
 elements.mobileMapTab?.addEventListener("click", () => setMobileView("map"));
 elements.mobileFiltersTab?.addEventListener("click", () => setMobileView("filters"));
+
+elements.stateFilter?.addEventListener("change", () => {
+  renderLocations();
+  zoomToSearchResults();
+});
+
+elements.locationFilterInput?.addEventListener("input", () => renderLocations());
+
+elements.locationFilterInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    zoomToSearchResults();
+  }
+});
 
 elements.resetFilters.addEventListener("click", resetFilters);
 elements.nearestBinButton.addEventListener("click", findNearestBin);

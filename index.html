@@ -21,8 +21,6 @@
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
       <button id="openSubmitModal" class="primary-button">Drop a pin</button>
-      <button id="adminLoginButton">Admin</button>
-      <button id="adminLogoutButton" class="hidden">Logout</button>
     </div>
   </header>
 
@@ -46,6 +44,12 @@
         <div class="results-header">
           <h2>Results</h2>
           <span id="listCount" class="list-count">0</span>
+        </div>
+        <div class="location-filter-controls">
+          <select id="stateFilter">
+            <option value="">All states</option>
+          </select>
+          <input id="locationFilterInput" type="search" placeholder="Filter by suburb, postcode or state..." />
         </div>
         <div id="resultsList" class="results-list"></div>
       </section>
@@ -209,6 +213,11 @@
       </form>
     </div>
   </div>
+
+  <footer class="app-footer">
+    <button id="footerAdminLoginButton" class="admin-footer-button" type="button">Admin</button>
+    <button id="footerAdminLogoutButton" class="admin-footer-button hidden" type="button">Logout</button>
+  </footer>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
