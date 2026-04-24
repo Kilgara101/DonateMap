@@ -52,15 +52,17 @@ body {
   box-shadow: 0 8px 30px rgba(0,0,0,0.25);
 }
 
-.map-prompt.open {
-  display: flex;
-}
+.map-prompt.open { display: flex; }
 
 .map-prompt button {
   padding: 6px 10px;
   border-color: white;
   color: white;
   background: transparent;
+}
+
+.edit-prompt {
+  background: #7c2d12;
 }
 
 .app-layout {
@@ -111,8 +113,15 @@ button:hover { background: #eef8f0; }
   color: white;
 }
 
-.primary-button:hover {
-  background: #105522;
+.primary-button:hover { background: #105522; }
+
+.danger-button {
+  border-color: #b42318;
+  color: #b42318;
+}
+
+.danger-button:hover {
+  background: #fff1f0;
 }
 
 #resetFilters, #nearestBinButton { width: 100%; }
@@ -144,12 +153,10 @@ button:hover { background: #eef8f0; }
   color: #1c5f2d;
 }
 
-#map {
-  height: 100%;
-  width: 100%;
-}
+#map { height: 100%; width: 100%; }
 
-.placement-active #map {
+.placement-active #map,
+.edit-placement-active #map {
   cursor: crosshair;
 }
 
@@ -166,6 +173,7 @@ button:hover { background: #eef8f0; }
 .marker-reuse-centre { background: #eba91e; }
 .marker-user { background: #111827; }
 .marker-proposed { background: #f43f5e; }
+.marker-edit { background: #f97316; }
 
 .popup-card h3 { margin: 0 0 6px; font-size: 18px; }
 .popup-card p { margin: 4px 0; }
@@ -189,11 +197,11 @@ button:hover { background: #eef8f0; }
 
 .verify-row {
   margin-top: 10px;
-  display: flex;
+  display: grid;
   gap: 8px;
 }
 
-.verify-button {
+.verify-row button {
   padding: 8px 10px;
   font-size: 13px;
   border-radius: 10px;

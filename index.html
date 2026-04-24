@@ -20,13 +20,18 @@
 
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
-      <button id="openSubmitModal" class="primary-button">Suggest a place</button>
+      <button id="openSubmitModal" class="primary-button">Suggest a new place</button>
     </div>
   </header>
 
   <div id="mapPrompt" class="map-prompt">
     Click the map to place the suggested location marker.
     <button id="cancelPlacement">Cancel</button>
+  </div>
+
+  <div id="editPrompt" class="map-prompt edit-prompt">
+    Drag the marker to the correct location, then submit the update.
+    <button id="cancelEditPlacement">Cancel</button>
   </div>
 
   <main class="app-layout">
@@ -83,21 +88,15 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="submitTitle">
       <div class="modal-header">
         <div>
-          <h2 id="submitTitle">Suggest a place</h2>
-          <p>Drop a marker first, then add details. Submissions are reviewed before appearing on the map.</p>
+          <h2 id="submitTitle">Suggest a new place</h2>
+          <p id="submitSubtitle">Drop a marker first, then add details. Submissions are reviewed before appearing on the map.</p>
         </div>
         <button id="closeSubmitModal" class="icon-button" aria-label="Close">×</button>
       </div>
 
       <form id="submitForm">
-        <label>
-          Submission type
-          <select name="submission_type" required>
-            <option value="new">New location</option>
-            <option value="update">Update existing location</option>
-            <option value="report_missing">Report missing / removed</option>
-          </select>
-        </label>
+        <input name="submission_type" type="hidden" value="new" />
+        <input name="location_id" type="hidden" />
 
         <label>
           Name
@@ -170,7 +169,7 @@
           </label>
         </div>
 
-        <p class="hint">Coordinates are filled from the marker you placed. You can adjust them if needed.</p>
+        <p class="hint">Coordinates are filled from the marker. You can adjust them if needed.</p>
 
         <div class="form-grid">
           <label>

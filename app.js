@@ -4,7 +4,9 @@ let allLocations = [];
 let userMarker = null;
 let nearestMarker = null;
 let proposedMarker = null;
+let editMarker = null;
 let placementMode = false;
+let editingLocation = null;
 
 const map = L.map("map").setView([-34.9285, 138.6007], 11);
 
@@ -38,10 +40,14 @@ const elements = {
   cancelSubmit: document.getElementById("cancelSubmit"),
   submitModal: document.getElementById("submitModal"),
   submitForm: document.getElementById("submitForm"),
+  submitTitle: document.getElementById("submitTitle"),
+  submitSubtitle: document.getElementById("submitSubtitle"),
   submitMessage: document.getElementById("submitMessage"),
   useMapCentreButton: document.getElementById("useMapCentreButton"),
   mapPrompt: document.getElementById("mapPrompt"),
-  cancelPlacement: document.getElementById("cancelPlacement")
+  cancelPlacement: document.getElementById("cancelPlacement"),
+  editPrompt: document.getElementById("editPrompt"),
+  cancelEditPlacement: document.getElementById("cancelEditPlacement")
 };
 
 function makeIcon(type, isNearest = false) {
@@ -80,6 +86,16 @@ function makeProposedIcon() {
     className: "",
     iconSize: [26, 26],
     iconAnchor: [13, 13],
+    popupAnchor: [0, -10]
+  });
+}
+
+function makeEditIcon() {
+  return L.divIcon({
+    html: `<div class="marker-dot marker-edit" style="width:28px;height:28px"></div>`,
+    className: "",
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
     popupAnchor: [0, -10]
   });
 }
@@ -130,7 +146,9 @@ function popupHtml(location) {
       ${location.notes ? `<p class="meta">${escapeHtml(location.notes)}</p>` : ""}
       <span class="verification-pill ${escapeHtml(verification)}">${prettyVerification(verification)}</span>
       <div class="verify-row">
-        <button class="verify-button" onclick="verifyLocation('${location.id}')">Verify this place</button>
+        <button onclick="verifyLocation('${location.id}')">Verify this place</button>
+        <button onclick="startExistingLocationUpdate('${location.id}')">Move / update details</button>
+        <button class="danger-button" onclick="reportMissingLocation('${location.id}')">Report missing / wrong</button>
       </div>
     </div>
   `;
@@ -348,20 +366,49 @@ function resetFilters() {
   elements.nearestResult.classList.remove("visible");
   elements.nearestResult.innerHTML = "";
 
+  clearTransientMarkers();
+  renderLocations({ fit: true });
+}
+
+function clearTransientMarkers() {
   if (userMarker) {
     map.removeLayer(userMarker);
     userMarker = null;
   }
-
   if (nearestMarker) {
     map.removeLayer(nearestMarker);
     nearestMarker = null;
   }
+  if (proposedMarker) {
+    map.removeLayer(proposedMarker);
+    proposedMarker = null;
+  }
+  if (editMarker) {
+    map.removeLayer(editMarker);
+    editMarker = null;
+  }
+}
 
-  renderLocations({ fit: true });
+function clearProposedMarker() {
+  if (proposedMarker) {
+    map.removeLayer(proposedMarker);
+    proposedMarker = null;
+  }
+}
+
+function clearEditMarker() {
+  if (editMarker) {
+    map.removeLayer(editMarker);
+    editMarker = null;
+  }
+  editingLocation = null;
 }
 
 function startPlacementMode() {
+  resetFormForNewLocation();
+  clearEditMarker();
+  clearProposedMarker();
+
   placementMode = true;
   document.body.classList.add("placement-active");
   elements.mapPrompt.classList.add("open");
@@ -376,16 +423,58 @@ function cancelPlacementMode() {
 }
 
 function placeProposedMarker(latlng) {
-  if (proposedMarker) map.removeLayer(proposedMarker);
+  clearProposedMarker();
 
   proposedMarker = L.marker(latlng, {
     icon: makeProposedIcon(),
     draggable: true
   }).addTo(map);
 
-  proposedMarker.bindPopup("Proposed location").openPopup();
+  proposedMarker.bindPopup("Proposed new location").openPopup();
+  proposedMarker.on("dragend", () => {
+    const pos = proposedMarker.getLatLng();
+    fillLatLonFields(pos.lat, pos.lng);
+  });
 
   fillLatLonFields(latlng.lat, latlng.lng);
+}
+
+function startExistingLocationUpdate(locationId) {
+  const location = allLocations.find((item) => item.id === locationId);
+  if (!location) return;
+
+  clearProposedMarker();
+  clearEditMarker();
+
+  editingLocation = location;
+  fillFormFromLocation(location, "update");
+
+  editMarker = L.marker([Number(location.latitude), Number(location.longitude)], {
+    icon: makeEditIcon(),
+    draggable: true
+  }).addTo(map);
+
+  editMarker.bindPopup("Drag me to the correct location").openPopup();
+  editMarker.on("dragend", () => {
+    const pos = editMarker.getLatLng();
+    fillLatLonFields(pos.lat, pos.lng);
+  });
+
+  map.setView([Number(location.latitude), Number(location.longitude)], Math.max(map.getZoom(), 15));
+
+  document.body.classList.add("edit-placement-active");
+  elements.editPrompt.classList.add("open");
+
+  openSubmitModal({
+    title: "Update existing place",
+    subtitle: "Drag the orange marker if the location is wrong, update any fields, then submit for review."
+  });
+}
+
+function cancelEditPlacement() {
+  clearEditMarker();
+  document.body.classList.remove("edit-placement-active");
+  elements.editPrompt.classList.remove("open");
 }
 
 function fillLatLonFields(lat, lng) {
@@ -393,15 +482,54 @@ function fillLatLonFields(lat, lng) {
   elements.submitForm.elements.longitude.value = Number(lng).toFixed(6);
 }
 
-function openSubmitModal() {
+function resetFormForNewLocation() {
+  elements.submitForm.reset();
+  elements.submitForm.elements.submission_type.value = "new";
+  elements.submitForm.elements.location_id.value = "";
+  elements.submitForm.elements.location_type.value = "standalone";
+  elements.submitTitle.textContent = "Suggest a new place";
+  elements.submitSubtitle.textContent = "Drop a marker first, then add details. Submissions are reviewed before appearing on the map.";
+}
+
+function fillFormFromLocation(location, submissionType) {
+  elements.submitForm.reset();
+
+  elements.submitForm.elements.submission_type.value = submissionType;
+  elements.submitForm.elements.location_id.value = location.id || "";
+  elements.submitForm.elements.name.value = location.name || "";
+  elements.submitForm.elements.type.value = location.type || "bin";
+  elements.submitForm.elements.operator.value = location.operator || "";
+  elements.submitForm.elements.address.value = location.address || "";
+  elements.submitForm.elements.suburb.value = location.suburb || "";
+  elements.submitForm.elements.postcode.value = location.postcode || "";
+  elements.submitForm.elements.location_type.value = location.location_type || "standalone";
+  elements.submitForm.elements.accepts_clothes.checked = Boolean(location.accepts_clothes);
+  elements.submitForm.elements.accepts_books.checked = Boolean(location.accepts_books);
+  elements.submitForm.elements.accepts_household_goods.checked = Boolean(location.accepts_household_goods);
+  elements.submitForm.elements.notes.value = location.notes || "";
+  fillLatLonFields(location.latitude, location.longitude);
+}
+
+function openSubmitModal({ title, subtitle } = {}) {
+  if (title) elements.submitTitle.textContent = title;
+  if (subtitle) elements.submitSubtitle.textContent = subtitle;
   elements.submitModal.classList.add("open");
   elements.submitModal.setAttribute("aria-hidden", "false");
   setSubmitMessage("", "");
 }
 
-function closeSubmitModal() {
+function closeSubmitModal({ clearNewMarker = true, clearEdit = false } = {}) {
   elements.submitModal.classList.remove("open");
   elements.submitModal.setAttribute("aria-hidden", "true");
+  setSubmitMessage("", "");
+
+  if (clearNewMarker) {
+    clearProposedMarker();
+  }
+
+  if (clearEdit) {
+    cancelEditPlacement();
+  }
 }
 
 function setSubmitMessage(message, type) {
@@ -438,8 +566,11 @@ async function handleSubmit(event) {
     return;
   }
 
+  const submissionType = valueOrNull(formData.get("submission_type")) || "new";
+
   const payload = {
-    submission_type: valueOrNull(formData.get("submission_type")),
+    submission_type: submissionType,
+    location_id: valueOrNull(formData.get("location_id")),
     name: valueOrNull(formData.get("name")),
     type: valueOrNull(formData.get("type")),
     operator: valueOrNull(formData.get("operator")),
@@ -472,17 +603,26 @@ async function handleSubmit(event) {
   }
 
   elements.submitForm.reset();
-  if (proposedMarker) {
-    map.removeLayer(proposedMarker);
-    proposedMarker = null;
-  }
-  setSubmitMessage("Thanks! Your suggestion has been submitted for review.", "success");
+  clearProposedMarker();
+  cancelEditPlacement();
+
+  const message = submissionType === "new"
+    ? "Thanks! Your new place has been submitted for review."
+    : "Thanks! Your update has been submitted for review.";
+
+  setSubmitMessage(message, "success");
 }
 
 function useMapCentreForSubmission() {
   const centre = map.getCenter();
   fillLatLonFields(centre.lat, centre.lng);
-  placeProposedMarker(centre);
+
+  const submissionType = elements.submitForm.elements.submission_type.value;
+  if (submissionType === "new") {
+    placeProposedMarker(centre);
+  } else if (editMarker) {
+    editMarker.setLatLng(centre);
+  }
 }
 
 async function verifyLocation(locationId) {
@@ -520,7 +660,47 @@ async function verifyLocation(locationId) {
   alert("Thanks — verification submitted for review.");
 }
 
+async function reportMissingLocation(locationId) {
+  const location = allLocations.find((item) => item.id === locationId);
+  if (!location) return;
+
+  const confirmed = confirm(`Report "${location.name}" as missing, wrong or no longer available?`);
+  if (!confirmed) return;
+
+  const { error } = await supabaseClient
+    .from("submissions")
+    .insert({
+      submission_type: "report_missing",
+      location_id: location.id,
+      name: location.name,
+      type: location.type,
+      operator: location.operator,
+      address: location.address,
+      suburb: location.suburb,
+      state: location.state || "SA",
+      postcode: location.postcode,
+      location_type: location.location_type,
+      accepts_clothes: location.accepts_clothes,
+      accepts_books: location.accepts_books,
+      accepts_household_goods: location.accepts_household_goods,
+      notes: "Community report: missing, wrong or no longer available",
+      latitude: location.latitude,
+      longitude: location.longitude,
+      status: "pending"
+    });
+
+  if (error) {
+    console.error(error);
+    alert("Could not submit report. Check Supabase RLS policy.");
+    return;
+  }
+
+  alert("Thanks — report submitted for review.");
+}
+
 window.verifyLocation = verifyLocation;
+window.startExistingLocationUpdate = startExistingLocationUpdate;
+window.reportMissingLocation = reportMissingLocation;
 
 [
   elements.searchInput,
@@ -539,21 +719,44 @@ elements.resetFilters.addEventListener("click", resetFilters);
 elements.nearestBinButton.addEventListener("click", findNearestBin);
 
 elements.openSubmitModal.addEventListener("click", startPlacementMode);
-elements.cancelPlacement.addEventListener("click", cancelPlacementMode);
+elements.cancelPlacement.addEventListener("click", () => {
+  cancelPlacementMode();
+  clearProposedMarker();
+});
+
+elements.cancelEditPlacement.addEventListener("click", () => {
+  cancelEditPlacement();
+  closeSubmitModal({ clearNewMarker: false, clearEdit: false });
+});
 
 map.on("click", (event) => {
   if (!placementMode) return;
 
   placeProposedMarker(event.latlng);
   cancelPlacementMode();
-  openSubmitModal();
+  openSubmitModal({
+    title: "Suggest a new place",
+    subtitle: "Add details for the marker you placed. Submissions are reviewed before appearing on the map."
+  });
 });
 
-elements.closeSubmitModal.addEventListener("click", closeSubmitModal);
-elements.cancelSubmit.addEventListener("click", closeSubmitModal);
-elements.submitModal.addEventListener("click", (event) => {
-  if (event.target === elements.submitModal) closeSubmitModal();
+elements.closeSubmitModal.addEventListener("click", () => {
+  const isEdit = elements.submitForm.elements.submission_type.value === "update";
+  closeSubmitModal({ clearNewMarker: true, clearEdit: isEdit });
 });
+
+elements.cancelSubmit.addEventListener("click", () => {
+  const isEdit = elements.submitForm.elements.submission_type.value === "update";
+  closeSubmitModal({ clearNewMarker: true, clearEdit: isEdit });
+});
+
+elements.submitModal.addEventListener("click", (event) => {
+  if (event.target === elements.submitModal) {
+    const isEdit = elements.submitForm.elements.submission_type.value === "update";
+    closeSubmitModal({ clearNewMarker: true, clearEdit: isEdit });
+  }
+});
+
 elements.submitForm.addEventListener("submit", handleSubmit);
 elements.useMapCentreButton.addEventListener("click", useMapCentreForSubmission);
 
