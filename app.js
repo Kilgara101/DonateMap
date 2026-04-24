@@ -8,8 +8,9 @@ let nearestMarker = null;
 let editingMarker = null;
 let editingContext = null;
 let dropPinMapHandler = null;
+let markerById = new Map();
 
-const map = L.map("map").setView([-25.0, 133.0], 4);
+const map = L.map("map").setView([-34.9285, 138.6007], 11);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -36,6 +37,11 @@ const elements = {
   nearestBinButton: document.getElementById("nearestBinButton"),
   nearestResult: document.getElementById("nearestResult"),
   resultCount: document.getElementById("resultCount"),
+  resultsList: document.getElementById("resultsList"),
+  listCount: document.getElementById("listCount"),
+  mobileListTab: document.getElementById("mobileListTab"),
+  mobileMapTab: document.getElementById("mobileMapTab"),
+  mobileFiltersTab: document.getElementById("mobileFiltersTab"),
   adminLoginButton: document.getElementById("adminLoginButton"),
   adminLogoutButton: document.getElementById("adminLogoutButton"),
   adminPanel: document.getElementById("adminPanel"),
@@ -206,21 +212,93 @@ function getFilteredLocations() {
 
 function renderLocations({ fit = false } = {}) {
   markerClusterLayer.clearLayers();
+  markerById = new Map();
+
   const filtered = getFilteredLocations();
 
   filtered.forEach((location) => {
-    L.marker([Number(location.latitude), Number(location.longitude)], { icon: makeIcon(location.type) })
+    const marker = L.marker([Number(location.latitude), Number(location.longitude)], {
+      icon: makeIcon(location.type)
+    })
       .bindPopup(popupHtml(location))
       .addTo(markerClusterLayer);
+
+    markerById.set(location.id, marker);
   });
 
   elements.resultCount.textContent = filtered.length;
+  renderResultsList(filtered);
 
   if (fit && filtered.length > 0) {
     const bounds = L.latLngBounds(filtered.map((loc) => [Number(loc.latitude), Number(loc.longitude)]));
     map.fitBounds(bounds.pad(0.15), { maxZoom: 13 });
   }
 }
+
+function renderResultsList(locations = getFilteredLocations()) {
+  if (!elements.resultsList) return;
+
+  const visibleLocations = locations.slice(0, 100);
+
+  elements.listCount.textContent = locations.length;
+
+  if (!locations.length) {
+    elements.resultsList.innerHTML = `
+      <div class="result-item">
+        <strong>No matching places</strong>
+        <span>Try changing your filters or search.</span>
+      </div>
+    `;
+    return;
+  }
+
+  elements.resultsList.innerHTML = visibleLocations.map((loc) => {
+    const address = [loc.address, loc.suburb, loc.state].filter(Boolean).join(", ");
+    return `
+      <button class="result-item" type="button" onclick="window.zoomToLocation('${loc.id}')">
+        <strong>${escapeHtml(loc.name || "Unnamed location")}</strong>
+        <span>${escapeHtml(address)}</span>
+        <div class="result-item-meta">
+          <span class="result-chip">${escapeHtml(prettyType(loc.type))}</span>
+          <span class="result-chip">${escapeHtml(prettyVerification(loc.verification_status))}</span>
+        </div>
+      </button>
+    `;
+  }).join("");
+
+  if (locations.length > visibleLocations.length) {
+    elements.resultsList.innerHTML += `
+      <div class="result-item">
+        <strong>${locations.length - visibleLocations.length} more results</strong>
+        <span>Use search or filters to narrow the list.</span>
+      </div>
+    `;
+  }
+}
+
+window.zoomToLocation = function(id) {
+  const loc = allLocations.find((item) => item.id === id);
+  if (!loc || !hasValidCoords(loc)) return;
+
+  setMobileView("map");
+  map.setView([Number(loc.latitude), Number(loc.longitude)], 16);
+
+  setTimeout(() => {
+    map.invalidateSize();
+
+    const marker = markerById.get(id);
+    if (marker) {
+      markerClusterLayer.zoomToShowLayer(marker, () => {
+        marker.openPopup();
+      });
+    } else {
+      L.popup()
+        .setLatLng([Number(loc.latitude), Number(loc.longitude)])
+        .setContent(escapeHtml(loc.name || "Location"))
+        .openOn(map);
+    }
+  }, 150);
+};
 
 function renderSubmissions() {
   submissionLayer.clearLayers();
@@ -319,65 +397,43 @@ function findNearestBin() {
 }
 
 async function loadLocations() {
-  const pageSize = 1000;
-  let from = 0;
-  let allData = [];
+  const { data, error } = await supabaseClient
+    .from("locations")
+    .select(`
+      id,
+      name,
+      type,
+      operator,
+      address,
+      suburb,
+      state,
+      postcode,
+      location_type,
+      accepts_clothes,
+      accepts_books,
+      accepts_household_goods,
+      notes,
+      verification_status,
+      latitude,
+      longitude
+    `)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .limit(5000);
 
-  while (true) {
-    const { data, error } = await supabaseClient
-      .from("locations")
-      .select(`
-        id,
-        name,
-        type,
-        operator,
-        address,
-        suburb,
-        state,
-        postcode,
-        location_type,
-        accepts_clothes,
-        accepts_books,
-        accepts_household_goods,
-        notes,
-        verification_status,
-        latitude,
-        longitude
-      `)
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
-      .range(from, from + pageSize - 1);
-
-    if (error) {
-      console.error(error);
-      alert("Could not load locations from Supabase.");
-      return;
-    }
-
-    allData = allData.concat(data || []);
-
-    if (!data || data.length < pageSize) {
-      break;
-    }
-
-    from += pageSize;
+  if (error) {
+    console.error(error);
+    alert("Could not load locations from Supabase. Check config.js and RLS policy.");
+    return;
   }
 
-  allLocations = allData.map((location) => ({
+  allLocations = (data || []).map((location) => ({
     ...location,
     latitude: Number(location.latitude),
     longitude: Number(location.longitude)
   }));
 
-  console.log("Loaded locations:", allLocations.length);
-  console.log("Valid coords:", allLocations.filter(hasValidCoords).length);
-
-  if (!window._hasFitted) {
-    renderLocations({ fit: true });
-    window._hasFitted = true;
-  } else {
-    renderLocations();
-  }
+  renderLocations({ fit: true });
 }
 
 async function loadSubmissions() {
@@ -914,6 +970,43 @@ function useMapCentreForSubmission() {
   elements.submitForm.elements.longitude.value = centre.lng.toFixed(6);
 }
 
+
+function zoomToSearchResults() {
+  const results = getFilteredLocations();
+
+  if (!results.length) return;
+
+  const bounds = L.latLngBounds(
+    results.map((loc) => [Number(loc.latitude), Number(loc.longitude)])
+  );
+
+  setMobileView("map");
+  map.fitBounds(bounds.pad(0.2), { maxZoom: 13 });
+
+  setTimeout(() => map.invalidateSize(), 150);
+}
+
+function setMobileView(view) {
+  document.body.classList.remove("mobile-view-list", "mobile-view-map", "mobile-view-filters");
+  document.body.classList.add(`mobile-view-${view}`);
+
+  [elements.mobileListTab, elements.mobileMapTab, elements.mobileFiltersTab].forEach((button) => {
+    if (button) button.classList.remove("active");
+  });
+
+  const activeButton = {
+    list: elements.mobileListTab,
+    map: elements.mobileMapTab,
+    filters: elements.mobileFiltersTab
+  }[view];
+
+  if (activeButton) activeButton.classList.add("active");
+
+  if (view === "map") {
+    setTimeout(() => map.invalidateSize(), 150);
+  }
+}
+
 [
   elements.searchInput,
   elements.filterClothes,
@@ -925,6 +1018,16 @@ function useMapCentreForSubmission() {
   element.addEventListener("input", () => renderLocations());
   element.addEventListener("change", () => renderLocations());
 });
+
+elements.searchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    zoomToSearchResults();
+  }
+});
+
+elements.mobileListTab?.addEventListener("click", () => setMobileView("list"));
+elements.mobileMapTab?.addEventListener("click", () => setMobileView("map"));
+elements.mobileFiltersTab?.addEventListener("click", () => setMobileView("filters"));
 
 elements.resetFilters.addEventListener("click", resetFilters);
 elements.nearestBinButton.addEventListener("click", findNearestBin);
@@ -945,6 +1048,7 @@ elements.submitForm.addEventListener("submit", handleSubmit);
 elements.useMapCentreButton.addEventListener("click", useMapCentreForSubmission);
 
 async function init() {
+  setMobileView("list");
   await loadLocations();
   await refreshAdminState();
 }

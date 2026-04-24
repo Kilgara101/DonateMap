@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DonateMap</title>
+  <title>DonateMap SA</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -14,17 +14,23 @@
 <body>
   <header class="app-header">
     <div>
-      <h1>DonateMap</h1>
+      <h1>DonateMap SA</h1>
       <p>Find places to donate, reuse and give</p>
     </div>
 
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
-      <button id="openSubmitModal" class="primary-button">Suggest a new or missing location!</button>
+      <button id="openSubmitModal" class="primary-button">Drop a pin</button>
       <button id="adminLoginButton">Admin</button>
       <button id="adminLogoutButton" class="hidden">Logout</button>
     </div>
   </header>
+
+  <nav id="mobileViewTabs" class="mobile-tabs" aria-label="Mobile view switcher">
+    <button id="mobileListTab" class="mobile-tab active" type="button">List</button>
+    <button id="mobileMapTab" class="mobile-tab" type="button">Map</button>
+    <button id="mobileFiltersTab" class="mobile-tab" type="button">Filters</button>
+  </nav>
 
   <main class="app-layout">
     <aside class="sidebar">
@@ -34,6 +40,14 @@
         <div class="legend-item"><span class="legend-dot marker-op-shop"></span> Op shop</div>
         <div class="legend-item"><span class="legend-dot marker-reuse-centre"></span> Reuse centre</div>
         <div class="legend-item admin-only hidden"><span class="legend-dot marker-submission"></span> Pending submission</div>
+      </section>
+
+      <section class="results-section">
+        <div class="results-header">
+          <h2>Results</h2>
+          <span id="listCount" class="list-count">0</span>
+        </div>
+        <div id="resultsList" class="results-list"></div>
       </section>
 
       <section>
