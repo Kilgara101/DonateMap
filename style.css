@@ -95,9 +95,7 @@ button.danger:hover {
   color: white;
 }
 
-.primary-button:hover {
-  background: #105522;
-}
+.primary-button:hover { background: #105522; }
 
 #resetFilters, #nearestBinButton { width: 100%; }
 
@@ -118,7 +116,6 @@ button.danger:hover {
 }
 
 .nearest-result.visible { display: block; }
-
 .nearest-result strong { display: block; margin-bottom: 4px; }
 
 .stats {
@@ -332,7 +329,5 @@ fieldset input { width: auto; }
     border-bottom: 1px solid #dfe8df;
   }
 
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
+  .form-grid { grid-template-columns: 1fr; }
 }

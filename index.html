@@ -20,7 +20,7 @@
 
     <div class="header-actions">
       <input id="searchInput" type="search" placeholder="Search suburb, name or operator..." />
-      <button id="openSubmitModal" class="primary-button">Suggest a place</button>
+      <button id="openSubmitModal" class="primary-button">Suggest a new place</button>
       <button id="adminLoginButton">Admin</button>
       <button id="adminLogoutButton" class="hidden">Logout</button>
     </div>
@@ -90,20 +90,14 @@
       <div class="modal-header">
         <div>
           <h2 id="submitTitle">Suggest a place</h2>
-          <p>Submissions are reviewed before appearing on the map.</p>
+          <p id="submitSubtitle">Submissions are reviewed before appearing on the map.</p>
         </div>
         <button id="closeSubmitModal" class="icon-button" aria-label="Close">×</button>
       </div>
 
       <form id="submitForm">
-        <label>
-          Submission type
-          <select name="submission_type" required>
-            <option value="new">New location</option>
-            <option value="update">Update existing location</option>
-            <option value="report_missing">Report missing / removed</option>
-          </select>
-        </label>
+        <input name="submission_type" type="hidden" value="new" />
+        <input name="location_id" type="hidden" />
 
         <label>
           Name
@@ -176,7 +170,7 @@
           </label>
         </div>
 
-        <p class="hint">Coordinates are optional. Leave blank if you only know the address.</p>
+        <p class="hint" id="coordinateHint">Coordinates are optional. Leave blank if you only know the address.</p>
 
         <div class="form-grid">
           <label>

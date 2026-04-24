@@ -47,6 +47,9 @@ const elements = {
   submitModal: document.getElementById("submitModal"),
   submitForm: document.getElementById("submitForm"),
   submitMessage: document.getElementById("submitMessage"),
+  submitTitle: document.getElementById("submitTitle"),
+  submitSubtitle: document.getElementById("submitSubtitle"),
+  coordinateHint: document.getElementById("coordinateHint"),
   useMapCentreButton: document.getElementById("useMapCentreButton")
 };
 
@@ -113,8 +116,8 @@ function boolBadge(label, value) {
 }
 
 function popupHtml(location) {
-  const moveButton = isAdmin
-    ? `<button onclick="window.startMoveLocation('${location.id}')">Move location</button>`
+  const adminMoveButton = isAdmin
+    ? `<button onclick="window.startMoveLocation('${location.id}')">Admin: move location</button>`
     : "";
 
   return `
@@ -129,7 +132,11 @@ function popupHtml(location) {
         <span class="badge ${prettyVerification(location.verification_status) === "Verified" ? "yes" : "no"}">${prettyVerification(location.verification_status)}</span>
       </div>
       ${location.notes ? `<p class="meta">${escapeHtml(location.notes)}</p>` : ""}
-      ${moveButton ? `<div class="popup-actions">${moveButton}</div>` : ""}
+      <div class="popup-actions">
+        <button onclick="window.startPublicModifyLocation('${location.id}')">Suggest an update</button>
+        <button class="danger" onclick="window.startPublicRemoveLocation('${location.id}')">Report removed</button>
+        ${adminMoveButton}
+      </div>
     </div>
   `;
 }
@@ -467,6 +474,61 @@ function openEditMarker(lat, lon, html) {
   map.setView([lat, lon], Math.max(map.getZoom(), 15));
 }
 
+window.startPublicModifyLocation = function(id) {
+  const location = allLocations.find((item) => item.id === id);
+  if (!location) return;
+
+  editingContext = { type: "public_update", location };
+
+  openEditMarker(
+    Number(location.latitude),
+    Number(location.longitude),
+    `
+      <div class="popup-card">
+        <h3>Suggest updated location</h3>
+        <p>${escapeHtml(location.name)}</p>
+        <p class="meta">Drag the red marker to the correct location first, then continue to update details.</p>
+        <div class="popup-actions">
+          <button onclick="window.continuePublicModifyLocation()">Continue to form</button>
+          <button onclick="window.cancelEditingMarker()">Cancel</button>
+        </div>
+      </div>
+    `
+  );
+};
+
+window.continuePublicModifyLocation = function() {
+  if (!editingMarker || !editingContext || editingContext.type !== "public_update") return;
+
+  const location = editingContext.location;
+  const latlng = editingMarker.getLatLng();
+
+  openSubmissionForm({
+    mode: "update",
+    title: "Suggest an update",
+    subtitle: "Move the marker first, then update any details that need changing. Your suggestion will be reviewed.",
+    location,
+    latitude: latlng.lat,
+    longitude: latlng.lng
+  });
+
+  clearEditingMarker();
+};
+
+window.startPublicRemoveLocation = function(id) {
+  const location = allLocations.find((item) => item.id === id);
+  if (!location) return;
+
+  openSubmissionForm({
+    mode: "report_missing",
+    title: "Report removed location",
+    subtitle: "Tell us why this place should be removed. Your report will be reviewed.",
+    location,
+    latitude: Number(location.latitude),
+    longitude: Number(location.longitude)
+  });
+};
+
 window.startMoveLocation = function(id) {
   const location = allLocations.find((item) => item.id === id);
   if (!location) return;
@@ -478,7 +540,7 @@ window.startMoveLocation = function(id) {
     Number(location.longitude),
     `
       <div class="popup-card">
-        <h3>Move location</h3>
+        <h3>Admin: move location</h3>
         <p>${escapeHtml(location.name)}</p>
         <p class="meta">Drag the red marker, then save.</p>
         <div class="popup-actions">
@@ -582,6 +644,16 @@ window.approveSubmission = async function() {
     const { error } = await supabaseClient
       .from("locations")
       .update(locationPayload)
+      .eq("id", submission.location_id);
+
+    locationError = error;
+  } else if (submission.submission_type === "report_missing" && submission.location_id) {
+    const { error } = await supabaseClient
+      .from("locations")
+      .update({
+        verification_status: "missing",
+        notes: submission.notes || "Reported removed by community submission."
+      })
       .eq("id", submission.location_id);
 
     locationError = error;
@@ -689,6 +761,52 @@ async function refreshAdminState() {
 }
 
 function openSubmitModal() {
+  openSubmissionForm({
+    mode: "new",
+    title: "Suggest a new place",
+    subtitle: "Add a new donation location. Your suggestion will be reviewed.",
+    location: null,
+    latitude: null,
+    longitude: null
+  });
+}
+
+function openSubmissionForm({ mode, title, subtitle, location, latitude, longitude }) {
+  elements.submitForm.reset();
+  elements.submitTitle.textContent = title;
+  elements.submitSubtitle.textContent = subtitle;
+  elements.submitForm.elements.submission_type.value = mode;
+  elements.submitForm.elements.location_id.value = location?.id || "";
+
+  if (location) {
+    elements.submitForm.elements.name.value = location.name || "";
+    elements.submitForm.elements.type.value = location.type || "bin";
+    elements.submitForm.elements.operator.value = location.operator || "";
+    elements.submitForm.elements.address.value = location.address || "";
+    elements.submitForm.elements.suburb.value = location.suburb || "";
+    elements.submitForm.elements.postcode.value = location.postcode || "";
+    elements.submitForm.elements.location_type.value = location.location_type || "standalone";
+    elements.submitForm.elements.accepts_clothes.checked = !!location.accepts_clothes;
+    elements.submitForm.elements.accepts_books.checked = !!location.accepts_books;
+    elements.submitForm.elements.accepts_household_goods.checked = !!location.accepts_household_goods;
+    elements.submitForm.elements.notes.value = mode === "report_missing"
+      ? `Reported removed: ${location.notes || ""}`.trim()
+      : location.notes || "";
+  }
+
+  if (latitude != null && longitude != null) {
+    elements.submitForm.elements.latitude.value = Number(latitude).toFixed(6);
+    elements.submitForm.elements.longitude.value = Number(longitude).toFixed(6);
+  } else {
+    const centre = map.getCenter();
+    elements.submitForm.elements.latitude.value = centre.lat.toFixed(6);
+    elements.submitForm.elements.longitude.value = centre.lng.toFixed(6);
+  }
+
+  elements.coordinateHint.textContent = mode === "update"
+    ? "Coordinates were set from the marker you moved."
+    : "Coordinates are optional. Use the map centre button if helpful.";
+
   elements.submitModal.classList.add("open");
   elements.submitModal.setAttribute("aria-hidden", "false");
   setSubmitMessage("", "");
@@ -736,6 +854,7 @@ async function handleSubmit(event) {
 
   const payload = {
     submission_type: valueOrNull(formData.get("submission_type")),
+    location_id: valueOrNull(formData.get("location_id")),
     name: valueOrNull(formData.get("name")),
     type: valueOrNull(formData.get("type")),
     operator: valueOrNull(formData.get("operator")),
